@@ -8,7 +8,7 @@ const images = [
 
 let currentIndex = 0;
 let viewer = null;
-let activeImageSrc = null; // Track current image to prevent race conditions
+let activeImageSrc = null;
 
 // TIMERS
 let idleTimer = null;
@@ -22,25 +22,25 @@ function loadViewer(index) {
     const imgData = images[index];
     activeImageSrc = imgData.src;
 
-    // 1. Pre-load Image to detect Aspect Ratio / Projection Type
+    // 1. Pre-load Image to detect Aspect Ratio
     const tempImg = new Image();
     tempImg.src = imgData.src;
     
     tempImg.onload = function() {
-        // Prevent loading if user switched image while this was loading
         if (tempImg.src.indexOf(activeImageSrc) === -1) return;
-
+        
+        // Calculate Aspect Ratio (Width / Height)
         const aspectRatio = tempImg.naturalWidth / tempImg.naturalHeight;
         detectAndSetupScene(aspectRatio, imgData.src);
     };
 }
 
 function detectAndSetupScene(aspectRatio, imageSrc) {
-    // 1. Destroy existing viewer
     if (viewer) {
         viewer.destroy();
     }
 
+    // Default Configuration
     let config = {
         type: "equirectangular",
         panorama: imageSrc,
@@ -51,47 +51,48 @@ function detectAndSetupScene(aspectRatio, imageSrc) {
         autoRotate: 0 
     };
 
-    // 2. Logic: Detect 360 vs Panorama
-    // Standard 360 is 2:1 ratio (2.0). We allow a small margin (1.9 - 2.1).
-    const isFull360 = aspectRatio >= 1.9 && aspectRatio <= 2.1;
+    // LOGIC: Distinguish between Spherical 360 vs Cylindrical Panorama
+    
+    // Standard 360 Sphere is 2:1 (2.0).
+    const isFullSphere = aspectRatio >= 1.9 && aspectRatio <= 2.1;
 
-    if (isFull360) {
-        // --- 360 MODE ---
+    if (isFullSphere) {
+        // --- TYPE A: FULL 360 SPHERE ---
         updateBadge("360");
+        
+        config.haov = 360; // Full Horizontal
+        config.vaov = 180; // Full Vertical
         config.hfov = 100;
         config.minHfov = 50;
         config.maxHfov = 120;
-        // Defaults cover full 360 sphere
     } else {
-        // --- PANORAMA / CYLINDRICAL MODE ---
+        // --- TYPE B: CYLINDRICAL PANORAMA ---
+        // We want 360° Horizontal rotation, but limited Vertical.
         updateBadge("pano");
-        
-        // We assume a standard Vertical Angle of View (VAOV) for panoramas (e.g., 60 degrees)
-        // Then we calculate how wide the image should be based on that slice.
-        // HAOV = VAOV * AspectRatio
-        const estimatedVAOV = 60; 
-        const estimatedHAOV = Math.min(estimatedVAOV * aspectRatio, 360); // Cap at 360
 
-        config.haov = estimatedHAOV;  // Horizontal Angle of View
-        config.vaov = estimatedVAOV;  // Vertical Angle of View
-        config.vOffset = 0;           // Center vertically
+        // Calculate the Vertical Angle of View (VAOV) needed to wrap 360 horizontally without distortion.
+        // Formula: 360 degrees width / Aspect Ratio = Vertical degrees
+        // Example: 6000x1000px (Ratio 6). 360 / 6 = 60 degrees high.
+        const calculatedVAOV = 360 / aspectRatio;
+
+        config.haov = 360;            // Force Full 360 Horizontal Loop
+        config.vaov = calculatedVAOV; // Limit Vertical based on image height
+        config.vOffset = 0;           // Keep centered
         
-        // Lock the view so they can't look at black sky/floor
-        config.minPitch = -estimatedVAOV / 2;
-        config.maxPitch = estimatedVAOV / 2;
-        config.minYaw = -estimatedHAOV / 2;
-        config.maxYaw = estimatedHAOV / 2;
+        // Lock Vertical limits so user can't look at black bars
+        config.minPitch = -calculatedVAOV / 2;
+        config.maxPitch = calculatedVAOV / 2;
         
-        // Adjust zoom levels for the partial view
-        config.hfov = estimatedVAOV; // Start zoomed to fit height
-        config.minHfov = 30;
-        config.maxHfov = estimatedVAOV + 20; 
+        // Set Zoom: Start fully zoomed out to fit height, allow zooming in
+        config.hfov = calculatedVAOV; 
+        config.minHfov = 30;          // Allow zooming in for details
+        config.maxHfov = calculatedVAOV; // Don't zoom out past the image edges
     }
 
-    // 3. Initialize Viewer
+    // Initialize Viewer
     viewer = pannellum.viewer('viewer', config);
 
-    // 4. Attach Events
+    // Attach Events
     const viewerContainer = document.getElementById('viewer');
     viewerContainer.onmousedown = resetIdleTimer;
     viewerContainer.ontouchstart = resetIdleTimer;
@@ -114,11 +115,11 @@ function updateBadge(type) {
             <span>360° View</span>
         `;
     } else {
-        // Panorama Icon (Wide Rectangle style)
+        // Panorama Icon (Cylinder / Strip style)
         badge.innerHTML = `
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-                <rect x="2" y="7" width="20" height="10" rx="2" ry="2"></rect>
-                <line x1="2" y1="12" x2="22" y2="12" stroke-dasharray="2 2"></line>
+                <rect x="2" y="6" width="20" height="12" rx="2"></rect>
+                <path d="M2 12h20" stroke-dasharray="2 2"/>
             </svg>
             <span>Panorama View</span>
         `;
@@ -134,7 +135,6 @@ function transitionToImage(index) {
         currentIndex = index;
         loadViewer(currentIndex);
 
-        // Wait for load, then fade in
         setTimeout(() => {
             overlay.classList.remove('active');
         }, 500); 
@@ -185,9 +185,10 @@ function resetIdleTimer() {
 function onIdleStart() {
     document.getElementById('idleIndicator').classList.add('visible');
     if (viewer) {
-        // Only zoom out if strict 360 mode, or safely adjust for pano
-        const maxFov = viewer.getHfovBounds ? viewer.getHfovBounds()[1] : 120;
-        viewer.setHfov(maxFov, 1000); 
+        // Get the safe max zoom out level for the current image type
+        const maxSafeFov = viewer.getHfovBounds ? viewer.getHfovBounds()[1] : 100;
+        
+        viewer.setHfov(maxSafeFov, 1000); 
         viewer.setPitch(0, 1000);
         viewer.startAutoRotate(-5); 
     }
