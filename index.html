@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>360 Gallery - Interactive Studio</title>
+    <title>360 Gallery - Studio Edition</title>
     <link rel="stylesheet" href="pannellum.css">
     <link rel="stylesheet" href="style.css">
     <script src="pannellum.js"></script>
@@ -40,9 +40,14 @@
                 <div class="color-swatch" style="background: #ffffff;" data-color="#ffffff"></div>
             </div>
 
-            <button id="eraserBtn" class="tool-btn" title="Eraser">🧹</button>
+            <button id="eraserBtn" class="tool-btn" title="Eraser">🧽</button>
 
             <button id="clearBtn" class="tool-btn" title="Clear All & Exit">🗑️</button>
+
+            <div class="divider"></div>
+
+            <button id="undoBtn" class="tool-btn small-btn" title="Undo">↩️</button>
+            <button id="redoBtn" class="tool-btn small-btn" title="Redo">↪️</button>
 
             <div id="lockIndicatorTool">🔒</div>
         </div>
@@ -57,8 +62,3 @@
             <button id="fsBtn" aria-label="Fullscreen">⛶</button>
             <button id="nextBtn" aria-label="Next">▶</button>
         </div>
-
-    </div>
-    <script src="app.js"></script>
-</body>
-</html>
