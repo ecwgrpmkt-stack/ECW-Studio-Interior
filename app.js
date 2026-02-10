@@ -1,112 +1,140 @@
-const images = [
-    { src: "images/img1.jpg" }, { src: "images/img2.jpg" },
-    { src: "images/img3.jpg" }, { src: "images/img4.jpg" },
-    { src: "images/img5.jpg" }, { src: "images/img6.jpg" },
-    { src: "images/img7.jpg" }, { src: "images/img8.jpg" },
-    { src: "images/img9.jpg" }, { src: "images/img10.jpg" }
-];
+// CONFIGURATION: GitHub Repository Details
+const REPO_OWNER = "ecwgrpmkt-stack";
+const REPO_NAME = "360_gallery";
+const IMAGE_FOLDER_PATH = "images";
+
+// We will populate this array dynamically
+let images = []; 
 
 let currentIndex = 0;
 let viewer = null;
-let activeImageSrc = null; // Track current image to prevent race conditions
+let activeImageSrc = null;
 
 // TIMERS
 let idleTimer = null;
 let slideTimer = null;
-const IDLE_DELAY = 3000;       // 3 seconds before showing hand/zooming out
-const AUTO_PLAY_DELAY = 60000; // 60 seconds before auto-advancing
+const IDLE_DELAY = 3000;       
+const AUTO_PLAY_DELAY = 60000; 
+
+// --- 1. INITIALIZATION: Fetch Images from GitHub ---
+
+async function initGallery() {
+    try {
+        console.log("Fetching image list from GitHub...");
+        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER_PATH}`;
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error(`GitHub API Error: ${response.statusText}`);
+        
+        const data = await response.json();
+
+        // Filter and Format the data
+        images = data
+            .filter(file => file.name.match(/\.(jpg|jpeg|png)$/i)) // Only images
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'})) // Natural sort (img1, img2, img10)
+            .map(file => ({ 
+                // We use the raw download URL to ensure we can load the image data across domains
+                src: file.download_url 
+            }));
+
+        if (images.length === 0) {
+            alert("No images found in the GitHub repository folder.");
+            return;
+        }
+
+        console.log(`Loaded ${images.length} images.`);
+        
+        // Start the App
+        buildThumbnails();
+        loadViewer(currentIndex);
+
+    } catch (error) {
+        console.error("Failed to load images:", error);
+        alert("Could not load images from GitHub. Check console for details.");
+    }
+}
 
 // --- MAIN VIEWER LOGIC ---
 
 function loadViewer(index) {
+    if (images.length === 0) return;
+
     const imgData = images[index];
     activeImageSrc = imgData.src;
 
-    // 1. Pre-load Image to analyze dimensions
+    // Pre-load Image to analyze dimensions
     const tempImg = new Image();
+    tempImg.crossOrigin = "Anonymous"; // Crucial for external GitHub images
     tempImg.src = imgData.src;
     
     tempImg.onload = function() {
-        // Prevent loading if user switched image while this was processing
         if (tempImg.src.indexOf(activeImageSrc) === -1) return;
 
-        // Calculate Aspect Ratio (Width / Height)
         const aspectRatio = tempImg.naturalWidth / tempImg.naturalHeight;
         detectAndSetupScene(aspectRatio, imgData.src);
+    };
+    
+    tempImg.onerror = function() {
+        console.error("Error loading image:", imgData.src);
     };
 }
 
 function detectAndSetupScene(aspectRatio, imageSrc) {
-    // Destroy existing viewer to free memory
     if (viewer) {
         viewer.destroy();
     }
 
-    // Default Configuration
     let config = {
         type: "equirectangular",
         panorama: imageSrc,
         autoLoad: true,
         showControls: false,
+        crossOrigin: "anonymous", // Required for GitHub Raw Images
         yaw: 0,
         pitch: 0,
         autoRotate: 0 
     };
 
     // --- LOGIC: Detect Projection Type ---
-    
-    // Standard 360 Sphere is 2:1 (approx 2.0)
     const isFullSphere = aspectRatio >= 1.9 && aspectRatio <= 2.1;
 
     if (isFullSphere) {
-        // --- TYPE A: FULL 360 SPHERE ---
+        // TYPE A: FULL 360 SPHERE
         updateBadge("360");
-        
-        config.haov = 360; // Full Horizontal
-        config.vaov = 180; // Full Vertical
-        config.hfov = 100; // Default Zoom
+        config.haov = 360;
+        config.vaov = 180;
+        config.hfov = 100;
         config.minHfov = 50;
         config.maxHfov = 120;
     } else {
-        // --- TYPE B: CYLINDRICAL / PARTIAL PANORAMA ---
+        // TYPE B: CYLINDRICAL / PARTIAL PANORAMA
         updateBadge("pano");
 
-        // Assume standard vertical FOV for phone cameras (approx 60 degrees)
         const assumedVerticalFOV = 60; 
-        
-        // Calculate exact Horizontal degrees based on aspect ratio
-        // Formula: Horizontal = Vertical * AspectRatio
         let calculatedHorizontalFOV = assumedVerticalFOV * aspectRatio;
 
-        // Cap at 360 just in case
         if (calculatedHorizontalFOV > 360) calculatedHorizontalFOV = 360;
 
         config.haov = calculatedHorizontalFOV;  
         config.vaov = assumedVerticalFOV;       
         config.vOffset = 0;           
         
-        // SEAM PREVENTION: 
-        // If image is less than 360 deg, restrict Yaw so it stops at edges.
         if (calculatedHorizontalFOV < 360) {
             const halfWidth = calculatedHorizontalFOV / 2;
             config.minYaw = -halfWidth;
             config.maxYaw = halfWidth;
         }
 
-        // Lock Vertical limits (prevent looking at black bars)
         config.minPitch = -assumedVerticalFOV / 2;
         config.maxPitch = assumedVerticalFOV / 2;
-        
-        // Adjust Zoom for Pano
         config.hfov = assumedVerticalFOV; 
         config.minHfov = 30;
         config.maxHfov = assumedVerticalFOV + 20; 
     }
 
-    // Initialize Viewer
     viewer = pannellum.viewer('viewer', config);
 
-    // Attach Idle Detection Events
+    // Attach Idle Events
     const viewerContainer = document.getElementById('viewer');
     viewerContainer.onmousedown = resetIdleTimer;
     viewerContainer.ontouchstart = resetIdleTimer;
@@ -129,7 +157,6 @@ function updateBadge(type) {
             <span>360° View</span>
         `;
     } else {
-        // Panorama Icon
         badge.innerHTML = `
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
                 <rect x="2" y="8" width="20" height="8" rx="2"></rect>
@@ -143,16 +170,11 @@ function updateBadge(type) {
 // --- TRANSITION EFFECT ---
 function transitionToImage(index) {
     const overlay = document.getElementById('fadeOverlay');
-    
-    // 1. Fade Out
     overlay.classList.add('active');
 
-    // 2. Wait, then Load
     setTimeout(() => {
         currentIndex = index;
         loadViewer(currentIndex);
-
-        // 3. Fade In
         setTimeout(() => {
             overlay.classList.remove('active');
         }, 500); 
@@ -168,6 +190,8 @@ function buildThumbnails() {
         const thumb = document.createElement("img");
         thumb.src = img.src;
         thumb.className = "thumb";
+        // CrossOrigin is needed for thumbnails too if they come from raw.github
+        thumb.crossOrigin = "Anonymous"; 
         thumb.onclick = () => {
             resetIdleTimer();
             transitionToImage(i);
@@ -190,37 +214,23 @@ function updateThumbs() {
 function startIdleCountdown() {
     clearTimeout(idleTimer);
     clearTimeout(slideTimer);
-
-    // Timer 1: Show Hand & Zoom Out
     idleTimer = setTimeout(onIdleStart, IDLE_DELAY);
-
-    // Timer 2: Auto-Advance Slide
     slideTimer = setTimeout(onAutoPlayNext, AUTO_PLAY_DELAY);
 }
 
 function resetIdleTimer() {
-    // User interacted
     clearTimeout(idleTimer);
     clearTimeout(slideTimer);
-
     document.getElementById('idleIndicator').classList.remove('visible');
-
-    if (viewer) {
-        viewer.stopAutoRotate();
-    }
+    if (viewer) viewer.stopAutoRotate();
 }
 
 function onIdleStart() {
     document.getElementById('idleIndicator').classList.add('visible');
-
     if (viewer) {
-        // Safely get max zoom out level
         const maxFov = viewer.getHfovBounds ? viewer.getHfovBounds()[1] : 120;
-        
         viewer.setHfov(maxFov, 1000); 
         viewer.setPitch(0, 1000);
-        
-        // Start rotation (negative is left)
         viewer.startAutoRotate(-5); 
     }
 }
@@ -244,21 +254,17 @@ document.getElementById("nextBtn").onclick = () => {
     transitionToImage(newIndex);
 };
 
-// Custom Fullscreen (keeps sidebar visible)
 const fsBtn = document.getElementById("fsBtn");
 const appContainer = document.getElementById("app");
-
 fsBtn.onclick = () => {
     resetIdleTimer();
     if (!document.fullscreenElement) {
-        appContainer.requestFullscreen().catch(err => {
-            console.log(`Error enabling fullscreen: ${err.message}`);
-        });
+        appContainer.requestFullscreen().catch(err => console.log(err));
     } else {
         document.exitFullscreen();
     }
 };
 
-// --- INITIALIZATION ---
-buildThumbnails();
-loadViewer(currentIndex);
+// --- START ---
+// Call the async init function instead of manually calling buildThumbnails
+initGallery();
