@@ -1,21 +1,188 @@
-/* --- EXISTING STYLES (Keep existing Viewer CSS here) --- */
-/* (Paste your previous style.css content here first) */
-/* ... existing viewer css ... */
-/* ... existing viewer css ... */
-
-/* --- NEW STYLES: LOGIN & ADMIN --- */
-
-.login-body, .admin-body {
-    background: #0d0d0d;
-    color: white;
+/* =========================================
+   1. GLOBAL RESET & VIEWER STYLES
+   (These apply to the 360 Gallery ONLY)
+   ========================================= */
+html, body {
+    margin: 0;
+    height: 100%;
+    background: black;
     font-family: 'Helvetica Neue', Arial, sans-serif;
-    display: flex;
-    flex-direction: column;
+    overflow: hidden; /* Critical for 360 Viewer */
 }
 
-/* --- LOGIN PAGE --- */
+/* The Main 360 Container */
+#app {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    position: relative;
+}
+
+#viewer {
+    flex: 1;
+    height: 100%;
+    z-index: 1;
+    outline: none;
+}
+
+/* --- SIDEBAR (170px) --- */
+#sidebar {
+    width: 170px;
+    background: #1a1a1a;
+    z-index: 20;
+    border-left: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.sidebar-title {
+    color: #fff; padding: 15px 5px; font-size: 11px; font-weight: bold;
+    text-transform: uppercase; text-align: center; border-bottom: 1px solid #333;
+    background: #1a1a1a;
+}
+
+#thumbPanel {
+    overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 12px; flex: 1;
+}
+
+.thumb {
+    width: 100%; height: 90px; object-fit: cover;
+    border: 2px solid transparent; border-radius: 4px;
+    cursor: pointer; opacity: 0.6; transition: all 0.2s;
+}
+.thumb:hover { opacity: 1; }
+.thumb.active { border-color: #ff3333; opacity: 1; }
+
+/* --- CANVAS --- */
+#drawingCanvas {
+    position: absolute; top: 0; left: 0;
+    width: calc(100% - 170px);
+    height: 100%;
+    z-index: 30;
+    pointer-events: none;
+    visibility: hidden;
+    cursor: crosshair;
+}
+#drawingCanvas.active { visibility: visible; pointer-events: auto; }
+
+/* --- TOOLBAR --- */
+#drawingToolbar {
+    position: absolute; top: 20px; left: 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    z-index: 110; background: rgba(0, 0, 0, 0.75);
+    padding: 8px; border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(5px);
+}
+
+.tool-btn {
+    width: 34px; height: 34px; border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1); color: white;
+    font-size: 18px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center; transition: all 0.2s;
+}
+.tool-btn:hover { background: rgba(255, 255, 255, 0.3); }
+.tool-btn.active { background: #ff3333; border-color: #ff3333; }
+
+.tool-popup {
+    position: absolute; left: 50px; background: rgba(0, 0, 0, 0.9);
+    padding: 8px; border-radius: 6px; display: none; gap: 5px;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+#brushPopup { top: 45px; }
+#colorPopup { top: 85px; flex-wrap: wrap; width: 70px; }
+#sizeSlider { width: 80px; }
+.color-swatch { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 1px solid #555; }
+
+#lockIndicatorTool {
+    margin-top: 5px; font-size: 16px; text-align: center;
+    opacity: 0.5; display: none; animation: pulseLock 2s infinite;
+}
+@keyframes pulseLock { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+
+/* --- CONTROLS --- */
+#controls {
+    position: absolute; bottom: 30px;
+    left: calc(50% - 85px); transform: translateX(-50%);
+    display: flex; gap: 20px; z-index: 100; transition: opacity 0.3s;
+}
+#controls.disabled { opacity: 0.2; pointer-events: none; filter: grayscale(100%); }
+
+#controls button {
+    width: 60px; height: 60px; font-size: 24px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.1); background: rgba(0, 0, 0, 0.5);
+    color: white; backdrop-filter: blur(4px); cursor: pointer;
+}
+#controls button:hover { background: rgba(255, 51, 51, 0.8); }
+
+/* --- OVERLAYS --- */
+#fadeOverlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: black; z-index: 50; pointer-events: none; opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+}
+#fadeOverlay.active { opacity: 1; pointer-events: all; }
+
+#ecwLoader {
+    position: absolute; top: 0; left: 0;
+    width: calc(100% - 170px);
+    height: 100%;
+    background: black;
+    z-index: 95;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s;
+}
+#ecwLoader.active { opacity: 1; pointer-events: all; }
+
+.spinner {
+    width: 50px; height: 50px;
+    border: 5px solid rgba(255,255,255,0.3);
+    border-top: 5px solid #ff3333;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 15px;
+}
+.loader-text { color: white; font-weight: bold; font-size: 18px; letter-spacing: 2px; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+#idleIndicator {
+    position: absolute; top: 50%;
+    left: calc(50% - 85px); transform: translate(-50%, -50%);
+    z-index: 40; text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.5s;
+}
+#idleIndicator.visible { opacity: 1; }
+.hand-icon { font-size: 50px; animation: blinkSwipe 2s infinite ease-in-out; }
+.drag-text { color: white; background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 4px; }
+@keyframes blinkSwipe { 0%, 100% { opacity: 0.4; transform: translateX(-10px); } 50% { opacity: 1; transform: translateX(10px); } }
+
+#badge360 {
+    position: absolute; bottom: 20px; left: 20px; z-index: 90;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 20px; color: white; font-size: 12px;
+    font-weight: bold; pointer-events: none; border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* =========================================
+   2. LOGIN & ADMIN STYLES (Scoped)
+   (These apply only when class="login-body" or "admin-body" is used)
+   ========================================= */
+
+body.login-body, body.admin-body {
+    background: #0d0d0d;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    overflow: auto; /* Allow scrolling for admin */
+}
+
+/* Login Page Specifics */
 .login-container {
-    width: 100%; height: 100vh;
+    width: 100%; min-height: 100vh;
     display: flex; flex-direction: column;
     justify-content: center; align-items: center;
     background: radial-gradient(circle at center, #1a1a1a 0%, #000 100%);
@@ -25,17 +192,14 @@
 .login-header h1 { font-size: 3rem; margin: 0; color: #fff; letter-spacing: 2px; }
 .login-header p { color: #888; margin-top: 10px; font-size: 1.2rem; }
 
-.access-split {
-    display: flex; gap: 30px;
-    flex-wrap: wrap; justify-content: center;
-}
+.access-split { display: flex; gap: 30px; flex-wrap: wrap; justify-content: center; }
 
 .access-card {
     background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.1);
     padding: 30px; border-radius: 12px;
     width: 300px; text-align: center;
-    transition: transform 0.3s, border-color 0.3s;
+    transition: transform 0.3s;
 }
 .access-card:hover { transform: translateY(-5px); border-color: rgba(255,255,255,0.3); }
 
@@ -49,7 +213,6 @@
     border: none; cursor: pointer; transition: background 0.2s;
 }
 .access-btn:hover { background: #e0e0e0; }
-
 .dev-btn { background: #333; color: white; }
 .dev-btn:hover { background: #ff3333; }
 
@@ -63,7 +226,7 @@ input[type="text"], input[type="password"] {
 .shake { animation: shake 0.5s; }
 @keyframes shake { 0%, 100% {transform: translateX(0);} 25% {transform: translateX(-5px);} 75% {transform: translateX(5px);} }
 
-/* --- ADMIN DASHBOARD --- */
+/* Admin Dashboard Specifics */
 .admin-nav {
     display: flex; justify-content: space-between; align-items: center;
     padding: 20px 40px; background: #111; border-bottom: 1px solid #333;
@@ -75,21 +238,17 @@ input[type="text"], input[type="password"] {
 .logout-btn:hover { border-color: white; color: white; }
 
 .admin-container { padding: 40px; max-width: 1200px; margin: 0 auto; width: 100%; box-sizing: border-box; }
-
 .admin-panel { background: #1a1a1a; padding: 25px; border-radius: 8px; margin-bottom: 30px; }
 .admin-panel h2 { margin-top: 0; border-bottom: 1px solid #333; padding-bottom: 15px; margin-bottom: 20px; }
 
-/* Upload Area */
 .token-input { margin-bottom: 15px; border-color: #444; }
 .file-drop-area {
     border: 2px dashed #444; padding: 40px; text-align: center;
-    border-radius: 8px; cursor: pointer; transition: border-color 0.2s;
-    position: relative;
+    border-radius: 8px; cursor: pointer; transition: border-color 0.2s; position: relative;
 }
 .file-drop-area:hover { border-color: #ff3333; }
 .file-drop-area input { position: absolute; top:0; left:0; width:100%; height:100%; opacity:0; cursor: pointer; }
 
-/* Table */
 .image-table { width: 100%; border-collapse: collapse; }
 .image-table th { text-align: left; padding: 10px; color: #888; border-bottom: 1px solid #333; }
 .image-table td { padding: 15px 10px; border-bottom: 1px solid #222; vertical-align: middle; }
