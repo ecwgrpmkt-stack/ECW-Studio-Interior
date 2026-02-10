@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8">
-    <title>360 Gallery - Studio Edition</title>
+    <title>360 Studio</title>
     <link rel="stylesheet" href="pannellum.css">
     <link rel="stylesheet" href="style.css">
     <script src="pannellum.js"></script>
@@ -15,12 +15,10 @@
         <canvas id="drawingCanvas"></canvas>
 
         <div id="fadeOverlay"></div>
-
         <div id="idleIndicator">
             <div class="hand-icon">👆</div>
             <div class="drag-text">Drag to Explore</div>
         </div>
-
         <div id="badge360"></div>
 
         <div id="drawingToolbar">
@@ -41,13 +39,12 @@
             </div>
 
             <button id="eraserBtn" class="tool-btn" title="Eraser">🧽</button>
+            <button id="clearBtn" class="tool-btn" title="Clear All">🗑️</button>
 
-            <button id="clearBtn" class="tool-btn" title="Clear All & Exit">🗑️</button>
-
-            <div class="divider"></div>
-
-            <button id="undoBtn" class="tool-btn small-btn" title="Undo">↩️</button>
-            <button id="redoBtn" class="tool-btn small-btn" title="Redo">↪️</button>
+            <div id="historyTools" style="display: none; flex-direction: column; gap: 6px; margin-top: 5px; border-top: 1px solid rgba(255,255,255,0.2); padding-top: 5px;">
+                <button id="undoBtn" class="tool-btn small-btn" title="Undo">↩️</button>
+                <button id="redoBtn" class="tool-btn small-btn" title="Redo">↪️</button>
+            </div>
 
             <div id="lockIndicatorTool">🔒</div>
         </div>
@@ -58,7 +55,12 @@
         </div>
 
         <div id="controls">
-            <button id="prevBtn" aria-label="Previous">◀</button>
-            <button id="fsBtn" aria-label="Fullscreen">⛶</button>
-            <button id="nextBtn" aria-label="Next">▶</button>
+            <button id="prevBtn">◀</button>
+            <button id="fsBtn">⛶</button>
+            <button id="nextBtn">▶</button>
         </div>
+
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
