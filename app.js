@@ -36,7 +36,6 @@ async function initGallery() {
     console.log("Loading Gallery...");
 
     try {
-        // Try GitHub API first
         const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}`;
         const response = await fetch(apiUrl);
         if (!response.ok) throw new Error("API Limit or Error");
@@ -51,7 +50,6 @@ async function initGallery() {
             }));
 
         finishInit();
-
     } catch (error) {
         console.warn("API Failed, attempting Brute Force Loading...", error);
         await bruteForceLoadImages();
@@ -59,21 +57,12 @@ async function initGallery() {
 }
 
 async function bruteForceLoadImages() {
-    // If API fails, we don't know if the branch is 'main' or 'master'.
-    // We will assume 'main' first, then try 'master' if images break.
-    
-    // Generate potential URLs for img1.jpg to img15.jpg
     const detectedImages = [];
     const maxRetries = 15;
 
     for (let i = 1; i <= maxRetries; i++) {
-        // Construct a raw URL assuming 'main' branch
+        // Try 'main' branch
         const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/img${i}.jpg`;
-        
-        // We push it blindly. If it 404s, the image loader will catch it later, 
-        // OR we can use wsrv.nl which returns a placeholder if failed, 
-        // but for now, this is the best fallback without API access.
-        
         detectedImages.push({
             src: `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&w=8000&we&q=85&output=webp`,
             originalPath: rawUrl
@@ -102,9 +91,7 @@ function initDrawingTools() {
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // Buttons
     document.getElementById("pencilBtn").onclick = () => { isDrawingMode = !isDrawingMode; toggleDrawingState(); };
-    
     document.getElementById("brushSizeBtn").onclick = () => togglePopup("brushPopup");
     document.getElementById("sizeSlider").oninput = (e) => { currentBrushSize = e.target.value; };
 
@@ -134,7 +121,7 @@ function initDrawingTools() {
     document.getElementById("undoBtn").onclick = undoLastStroke;
     document.getElementById("redoBtn").onclick = redoLastStroke;
 
-    // Canvas Listeners
+    // Events
     canvas.addEventListener('mousedown', startDraw);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDraw);
@@ -146,7 +133,7 @@ function initDrawingTools() {
 
 function resizeCanvas() {
     if (canvas && canvas.parentElement) {
-        // WIDTH = Screen Width - Sidebar Width (170px)
+        // MATCH CSS: Screen Width - Sidebar (170px)
         canvas.width = canvas.parentElement.clientWidth - 170;
         canvas.height = canvas.parentElement.clientHeight;
     }
@@ -169,24 +156,21 @@ function toggleDrawingState() {
     const controls = document.getElementById("controls");
 
     if (isDrawingMode) {
-        // ON
         pencilBtn.classList.add("active");
         lockIcon.style.display = "block";
-        historyTools.style.display = "flex"; // SHOW Undo/Redo
+        historyTools.style.display = "flex";
         
         canvas.classList.add("active");
         controls.classList.add("disabled");
 
         resetIdleTimer();
         if(viewer) viewer.stopAutoRotate();
-
         if (drawingHistory.length === 0) saveHistoryState();
 
     } else {
-        // OFF
         pencilBtn.classList.remove("active");
         lockIcon.style.display = "none";
-        historyTools.style.display = "none"; // HIDE Undo/Redo
+        historyTools.style.display = "none";
         document.querySelectorAll(".tool-popup").forEach(p => p.style.display = "none");
         
         canvas.classList.remove("active");
@@ -353,18 +337,28 @@ function updateBadge(type) {
     }
 }
 
+// --- TRANSITION LOGIC WITH ECW LOADER ---
+
 function transitionToImage(index) {
     if (isDrawingMode) {
         isDrawingMode = false;
         toggleDrawingState(); 
     }
-    const overlay = document.getElementById('fadeOverlay');
-    overlay.classList.add('active');
+
+    // 1. Show ECW Loader
+    const loader = document.getElementById('ecwLoader');
+    loader.classList.add('active');
+
+    // 2. Wait 2 seconds (simulated load time)
     setTimeout(() => {
         currentIndex = index;
         loadViewer(currentIndex);
-        setTimeout(() => { overlay.classList.remove('active'); }, 500); 
-    }, 500);
+
+        // 3. Hide Loader
+        setTimeout(() => {
+            loader.classList.remove('active');
+        }, 500); // fade out duration
+    }, 2000);
 }
 
 function buildThumbnails() {
