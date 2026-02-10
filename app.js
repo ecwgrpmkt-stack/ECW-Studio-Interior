@@ -1,7 +1,7 @@
 // CONFIGURATION: GitHub Repository Details
 const REPO_OWNER = "ecwgrpmkt-stack";
 const REPO_NAME = "360_gallery";
-const BRANCH_NAME = "main"; // Assuming 'main' branch. Change to 'master' if needed.
+const BRANCH_NAME = "main"; 
 const IMAGE_FOLDER_PATH = "images";
 
 // We will populate this array dynamically
@@ -34,13 +34,18 @@ async function initGallery() {
             .filter(file => file.name.match(/\.(jpg|jpeg|png)$/i))
             .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}))
             .map(file => {
-                // OPTIMIZATION 1: Use jsDelivr CDN for faster delivery than raw.github
-                // Format: https://cdn.jsdelivr.net/gh/USER/REPO@BRANCH/PATH
-                const cdnSrc = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH_NAME}/${file.path}`;
+                // 1. Get the fast CDN source for the original file
+                const rawCdnSrc = `https://cdn.jsdelivr.net/gh/${REPO_OWNER}/${REPO_NAME}@${BRANCH_NAME}/${file.path}`;
                 
+                // 2. APPLY RESOLUTION LIMIT (Device Support Fix)
+                // &w=8000  -> Resize width to 8000px (Height scales automatically)
+                // &we      -> "Without Enlargement" (If image is small, don't stretch it)
+                // &q=85    -> High quality (85%) to keep 360 details sharp
+                const optimizedSrc = `https://wsrv.nl/?url=${encodeURIComponent(rawCdnSrc)}&w=8000&we&q=85&output=webp`;
+
                 return { 
-                    src: cdnSrc,
-                    originalPath: file.download_url // Fallback if needed
+                    src: optimizedSrc,
+                    originalPath: rawCdnSrc // Keep reference just in case
                 };
             });
 
@@ -80,7 +85,6 @@ function loadViewer(index) {
         const aspectRatio = tempImg.naturalWidth / tempImg.naturalHeight;
         detectAndSetupScene(aspectRatio, imgData.src);
         
-        // OPTIMIZATION 3: Pre-load the NEXT image in the background
         preloadNextImage(index);
     };
     
@@ -187,107 +191,4 @@ function updateBadge(type) {
 
 // --- TRANSITION EFFECT ---
 function transitionToImage(index) {
-    const overlay = document.getElementById('fadeOverlay');
-    overlay.classList.add('active');
-
-    setTimeout(() => {
-        currentIndex = index;
-        loadViewer(currentIndex);
-        setTimeout(() => {
-            overlay.classList.remove('active');
-        }, 500); 
-    }, 500);
-}
-
-// --- THUMBNAIL LOGIC ---
-function buildThumbnails() {
-    const panel = document.getElementById("thumbPanel");
-    panel.innerHTML = "";
-
-    images.forEach((img, i) => {
-        const thumb = document.createElement("img");
-        
-        // OPTIMIZATION 2: Use wsrv.nl to resize images on the fly!
-        // This requests a small 200px version of the CDN image.
-        // Format: https://wsrv.nl/?url=[IMAGE_URL]&w=200&q=70
-        const thumbUrl = `https://wsrv.nl/?url=${encodeURIComponent(img.src)}&w=200&q=70&output=webp`;
-
-        thumb.src = thumbUrl;
-        thumb.className = "thumb";
-        thumb.crossOrigin = "Anonymous"; 
-        
-        thumb.onclick = () => {
-            resetIdleTimer();
-            transitionToImage(i);
-        };
-        panel.appendChild(thumb);
-    });
-}
-
-function updateThumbs() {
-    document.querySelectorAll(".thumb").forEach((t, i) => {
-        t.classList.toggle("active", i === currentIndex);
-        if(i === currentIndex) {
-            t.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-    });
-}
-
-// --- IDLE & AUTO-PLAY SYSTEM ---
-
-function startIdleCountdown() {
-    clearTimeout(idleTimer);
-    clearTimeout(slideTimer);
-    idleTimer = setTimeout(onIdleStart, IDLE_DELAY);
-    slideTimer = setTimeout(onAutoPlayNext, AUTO_PLAY_DELAY);
-}
-
-function resetIdleTimer() {
-    clearTimeout(idleTimer);
-    clearTimeout(slideTimer);
-    document.getElementById('idleIndicator').classList.remove('visible');
-    if (viewer) viewer.stopAutoRotate();
-}
-
-function onIdleStart() {
-    document.getElementById('idleIndicator').classList.add('visible');
-    if (viewer) {
-        const maxFov = viewer.getHfovBounds ? viewer.getHfovBounds()[1] : 120;
-        viewer.setHfov(maxFov, 1000); 
-        viewer.setPitch(0, 1000);
-        viewer.startAutoRotate(-5); 
-    }
-}
-
-function onAutoPlayNext() {
-    let nextIndex = (currentIndex + 1) % images.length;
-    transitionToImage(nextIndex);
-}
-
-// --- CONTROLS ---
-
-document.getElementById("prevBtn").onclick = () => {
-    resetIdleTimer();
-    let newIndex = (currentIndex - 1 + images.length) % images.length;
-    transitionToImage(newIndex);
-};
-
-document.getElementById("nextBtn").onclick = () => {
-    resetIdleTimer();
-    let newIndex = (currentIndex + 1) % images.length;
-    transitionToImage(newIndex);
-};
-
-const fsBtn = document.getElementById("fsBtn");
-const appContainer = document.getElementById("app");
-fsBtn.onclick = () => {
-    resetIdleTimer();
-    if (!document.fullscreenElement) {
-        appContainer.requestFullscreen().catch(err => console.log(err));
-    } else {
-        document.exitFullscreen();
-    }
-};
-
-// --- START ---
-initGallery();
+    const overlay = document.getElementById('fade
