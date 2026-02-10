@@ -13,188 +13,176 @@ html, body {
     position: relative;
 }
 
-/* Viewer takes up all remaining space */
+/* --- VIEWER (Layer 1) --- */
 #viewer {
     flex: 1;
     height: 100%;
     position: relative;
     outline: none;
+    z-index: 1; 
 }
 
-/* --- SIDEBAR CONTAINER --- */
-/* This wrapper ensures the sidebar stays visible and holds the title + list */
+/* --- DRAWING CANVAS (Layer 2) --- */
+#drawingCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 30; /* Above viewer(1) and sidebar(20), below controls(100) */
+    pointer-events: none; /* Let clicks pass through until activated */
+    touch-action: none;   /* Prevent scrolling while drawing */
+}
+
+/* --- DRAWING TOOLBAR (Layer 4 - Top) --- */
+#drawingToolbar {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 110; /* Highest Priority */
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(4px);
+}
+
+.tool-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+}
+
+.tool-btn:hover { background: rgba(255, 255, 255, 0.3); }
+
+.tool-btn.active {
+    background: #ff3333;
+    border-color: #ff3333;
+    box-shadow: 0 0 8px rgba(255, 51, 51, 0.5);
+}
+
+/* Tool Popups */
+.tool-popup {
+    position: absolute;
+    left: 60px; /* To the right of the toolbar */
+    background: rgba(0, 0, 0, 0.9);
+    padding: 10px;
+    border-radius: 6px;
+    display: none;
+    flex-direction: row;
+    gap: 5px;
+    border: 1px solid rgba(255,255,255,0.2);
+}
+#brushPopup { top: 60px; }
+#colorPopup { top: 110px; flex-wrap: wrap; width: 80px; }
+
+/* Inputs */
+#sizeSlider { width: 100px; cursor: pointer; }
+
+.color-swatch {
+    width: 25px; height: 25px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent;
+}
+.color-swatch:hover { border-color: white; }
+
+/* Lock Icon */
+#lockIndicatorTool {
+    margin-top: 10px; font-size: 24px; text-align: center;
+    opacity: 0.5; display: none; animation: pulseLock 2s infinite;
+}
+@keyframes pulseLock {
+    0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; }
+}
+
+/* --- SIDEBAR --- */
 #sidebar {
     width: 140px;
     background: #1a1a1a;
     z-index: 20;
     border-left: 1px solid #333;
     display: flex;
-    flex-direction: column; /* Stacks title and list vertically */
+    flex-direction: column;
     height: 100%;
 }
 
-/* Fixed Title at the top */
 .sidebar-title {
-    color: #fff;
-    padding: 20px 10px 15px 10px;
-    font-size: 11px;
-    font-weight: bold;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    text-align: center;
-    border-bottom: 1px solid #333;
-    flex-shrink: 0; /* Prevents title from shrinking */
-    background: #1a1a1a;
+    color: #fff; padding: 20px 10px 15px 10px;
+    font-size: 11px; font-weight: bold; text-transform: uppercase;
+    letter-spacing: 1px; text-align: center;
+    border-bottom: 1px solid #333; flex-shrink: 0; background: #1a1a1a;
 }
 
-/* Scrollable Image List */
 #thumbPanel {
-    overflow-y: auto; /* Only this part scrolls */
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex: 1; /* Takes up all remaining height */
+    overflow-y: auto; padding: 10px;
+    display: flex; flex-direction: column; gap: 10px; flex: 1;
 }
 
-/* Scrollbar Styling */
 #thumbPanel::-webkit-scrollbar { width: 6px; }
 #thumbPanel::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
-#thumbPanel::-webkit-scrollbar-track { background: #1a1a1a; }
 
-/* Thumbnail Images */
 .thumb {
-    width: 100%;
-    height: 80px;
-    object-fit: cover;
-    border: 3px solid transparent;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    opacity: 0.6;
+    width: 100%; height: 80px; object-fit: cover;
+    border: 3px solid transparent; border-radius: 6px;
+    cursor: pointer; transition: all 0.2s ease; opacity: 0.6;
 }
-
 .thumb:hover { opacity: 1; }
-.thumb.active {
-    border-color: #ff3333;
-    opacity: 1;
-    transform: scale(1.02);
-}
+.thumb.active { border-color: #ff3333; opacity: 1; transform: scale(1.02); }
 
 /* --- CONTROLS --- */
 #controls {
-    position: absolute;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 20px;
-    z-index: 100;
+    position: absolute; bottom: 30px; left: 50%;
+    transform: translateX(-50%); display: flex; gap: 20px; z-index: 100;
 }
-
-/* Center controls relative to the Viewer (accounting for sidebar width) */
-@media (min-width: 600px) {
-    #controls {
-        left: calc(50% - 70px);
-    }
-}
+@media (min-width: 600px) { #controls { left: calc(50% - 70px); } }
 
 #controls button {
-    width: 60px;
-    height: 60px;
-    font-size: 24px;
-    border-radius: 50%;
-    border: 2px solid rgba(255,255,255,0.1);
-    background: rgba(0, 0, 0, 0.5);
-    color: white;
-    cursor: pointer;
-    transition: all 0.2s;
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 60px; height: 60px; font-size: 24px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.1); background: rgba(0, 0, 0, 0.5);
+    color: white; cursor: pointer; transition: all 0.2s;
+    backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center;
 }
-
 #controls button:hover {
-    background: rgba(255, 51, 51, 0.8);
-    transform: scale(1.1);
-    border-color: white;
+    background: rgba(255, 51, 51, 0.8); transform: scale(1.1); border-color: white;
 }
 
-/* --- TRANSITION OVERLAY --- */
+/* --- OVERLAYS --- */
 #fadeOverlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: black;
-    z-index: 50;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.5s ease-in-out;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: black; z-index: 50; pointer-events: none;
+    opacity: 0; transition: opacity 0.5s ease-in-out;
 }
+#fadeOverlay.active { opacity: 1; pointer-events: all; }
 
-#fadeOverlay.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-/* --- IDLE HAND INDICATOR --- */
 #idleIndicator {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 40;
-    text-align: center;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.5s;
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 40; text-align: center; pointer-events: none;
+    opacity: 0; transition: opacity 0.5s;
 }
+#idleIndicator.visible { opacity: 1; }
 
-#idleIndicator.visible {
-    opacity: 1;
-}
-
-.hand-icon {
-    font-size: 50px;
-    animation: blinkSwipe 2s infinite ease-in-out;
-    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));
-}
-
-.drag-text {
-    color: white;
-    margin-top: 10px;
-    font-size: 14px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
-    background: rgba(0,0,0,0.4);
-    padding: 5px 10px;
-    border-radius: 4px;
-}
-
+.hand-icon { font-size: 50px; animation: blinkSwipe 2s infinite ease-in-out; filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5)); }
+.drag-text { color: white; margin-top: 10px; font-size: 14px; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 2px 4px rgba(0,0,0,0.8); background: rgba(0,0,0,0.4); padding: 5px 10px; border-radius: 4px; }
 @keyframes blinkSwipe {
-    0%, 100% { opacity: 0.4; transform: translateX(-10px); }
-    50% { opacity: 1; transform: translateX(10px); }
+    0%, 100% { opacity: 0.4; transform: translateX(-10px); } 50% { opacity: 1; transform: translateX(10px); }
 }
 
-/* --- 360 BADGE --- */
 #badge360 {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    z-index: 90;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: rgba(0,0,0,0.6);
-    padding: 8px 12px;
-    border-radius: 20px;
-    color: white;
-    font-size: 12px;
-    font-weight: bold;
-    pointer-events: none;
+    position: absolute; bottom: 20px; left: 20px; z-index: 90;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.6); padding: 8px 12px;
+    border-radius: 20px; color: white; font-size: 12px;
+    font-weight: bold; pointer-events: none;
     border: 1px solid rgba(255,255,255,0.2);
 }
