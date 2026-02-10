@@ -13,7 +13,7 @@ let viewer = null;
 let idleTimer = null;
 let slideTimer = null;
 const IDLE_DELAY = 3000;       // 3 seconds before showing hand/zooming out
-const AUTO_PLAY_DELAY = 10000; // 10 seconds idle before moving to next slide
+const AUTO_PLAY_DELAY = 60000; // 60 seconds idle before moving to next slide
 
 // --- MAIN VIEWER LOGIC ---
 
