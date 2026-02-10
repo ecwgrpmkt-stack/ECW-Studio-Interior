@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>ECW Gallery - Access Control</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="login-body">
+    
+    <div class="login-container">
+        <div class="login-header">
+            <h1>ECW Studio 360</h1>
+            <p>Select your access level</p>
+        </div>
+
+        <div class="access-split">
+            
+            <div class="access-card viewer-card">
+                <h2>Viewer Access</h2>
+                <p>Explore the 360° interactive gallery.</p>
+                <a href="gallery.html" class="access-btn">Enter Gallery</a>
+            </div>
+
+            <div class="access-card dev-card">
+                <h2>Developer Login</h2>
+                <p>Manage images and settings.</p>
+                
+                <form id="loginForm">
+                    <input type="text" id="username" placeholder="Username" required autocomplete="off">
+                    <input type="password" id="password" placeholder="Password" required>
+                    <button type="submit" class="access-btn dev-btn">Login</button>
+                    <div id="loginError" class="error-msg">Invalid Credentials</div>
+                </form>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Simple Client-Side Auth Script
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const u = document.getElementById('username').value.trim();
+            const p = document.getElementById('password').value.trim();
+            const errorMsg = document.getElementById('loginError');
+
+            // Case-Insensitive Check
+            // User: ECW, Pass: ecw123
+            if (u.toLowerCase() === 'ecw' && p === 'ecw123') {
+                // Success: Save session and redirect
+                sessionStorage.setItem('ecw_auth', 'true');
+                window.location.href = 'admin.html';
+            } else {
+                // Fail
+                errorMsg.style.display = 'block';
+                // Shake animation
+                document.querySelector('.dev-card').classList.add('shake');
+                setTimeout(() => document.querySelector('.dev-card').classList.remove('shake'), 500);
+            }
+        });
+    </script>
+</body>
+</html>
