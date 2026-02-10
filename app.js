@@ -1,8 +1,7 @@
 // CONFIGURATION
 const REPO_OWNER = "ecwgrpmkt-stack";
 const REPO_NAME = "360_gallery";
-const IMAGE_FOLDER_PATH = "images";
-const BRANCH_FALLBACK = "main"; 
+const IMAGE_FOLDER = "images";
 
 // GLOBALS
 let images = []; 
@@ -25,125 +24,121 @@ let currentBrushSize = 5;
 let currentColor = "#ff0000";
 let isEraser = false;
 
-// HISTORY SYSTEM
+// HISTORY
 let drawingHistory = [];
 let historyStep = -1;
-const MAX_HISTORY = 3;
+const MAX_HISTORY = 5;
 
-// --- 1. INITIALIZATION ---
+// --- 1. ROBUST IMAGE LOADING ---
 
 async function initGallery() {
     initDrawingTools();
-    console.log("Initializing Gallery...");
+    console.log("Loading Gallery...");
 
     try {
-        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER_PATH}`;
+        // Try GitHub API first
+        const apiUrl = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}`;
         const response = await fetch(apiUrl);
-
-        if (!response.ok) throw new Error(`GitHub API Error: ${response.status}`);
+        if (!response.ok) throw new Error("API Limit or Error");
 
         const data = await response.json();
         images = data
             .filter(file => file.name.match(/\.(jpg|jpeg|png)$/i))
             .sort((a, b) => a.name.localeCompare(b.name, undefined, {numeric: true, sensitivity: 'base'}))
-            .map(file => {
-                const rawUrl = file.download_url;
-                const optimizedSrc = `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&w=8000&we&q=85&output=webp`;
-                return { src: optimizedSrc, originalPath: rawUrl };
-            });
+            .map(file => ({
+                src: `https://wsrv.nl/?url=${encodeURIComponent(file.download_url)}&w=8000&we&q=85&output=webp`,
+                originalPath: file.download_url
+            }));
 
         finishInit();
+
     } catch (error) {
-        console.warn("Switching to Fallback Mode...", error);
-        loadFallbackImages();
+        console.warn("API Failed, attempting Brute Force Loading...", error);
+        await bruteForceLoadImages();
     }
 }
 
-function loadFallbackImages() {
-    const fallbackList = [];
-    for (let i = 1; i <= 15; i++) {
-        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH_FALLBACK}/${IMAGE_FOLDER_PATH}/img${i}.jpg`;
-        const optimizedSrc = `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&w=8000&we&q=85&output=webp`;
-        fallbackList.push({ src: optimizedSrc, originalPath: rawUrl });
+async function bruteForceLoadImages() {
+    // If API fails, we don't know if the branch is 'main' or 'master'.
+    // We will assume 'main' first, then try 'master' if images break.
+    
+    // Generate potential URLs for img1.jpg to img15.jpg
+    const detectedImages = [];
+    const maxRetries = 15;
+
+    for (let i = 1; i <= maxRetries; i++) {
+        // Construct a raw URL assuming 'main' branch
+        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/img${i}.jpg`;
+        
+        // We push it blindly. If it 404s, the image loader will catch it later, 
+        // OR we can use wsrv.nl which returns a placeholder if failed, 
+        // but for now, this is the best fallback without API access.
+        
+        detectedImages.push({
+            src: `https://wsrv.nl/?url=${encodeURIComponent(rawUrl)}&w=8000&we&q=85&output=webp`,
+            originalPath: rawUrl
+        });
     }
-    images = fallbackList;
+
+    images = detectedImages;
     finishInit();
 }
 
 function finishInit() {
     if (images.length === 0) {
-        alert("Error: No images found.");
+        alert("Critical: No images found.");
         return;
     }
     buildThumbnails();
     loadViewer(currentIndex);
 }
 
-// --- 2. DRAWING & HISTORY LOGIC ---
+// --- 2. DRAWING LOGIC ---
 
 function initDrawingTools() {
     canvas = document.getElementById("drawingCanvas");
     drawCtx = canvas.getContext("2d");
 
-    // Initial resize to match layout
     window.addEventListener('resize', resizeCanvas);
     resizeCanvas();
 
-    // Elements
-    const pencilBtn = document.getElementById("pencilBtn");
-    const brushSizeBtn = document.getElementById("brushSizeBtn");
-    const colorPaletteBtn = document.getElementById("colorPaletteBtn");
-    const eraserBtn = document.getElementById("eraserBtn");
-    const clearBtn = document.getElementById("clearBtn");
-    const undoBtn = document.getElementById("undoBtn");
-    const redoBtn = document.getElementById("redoBtn");
-    const sizeSlider = document.getElementById("sizeSlider");
-
-    // Handlers
-    pencilBtn.onclick = () => { isDrawingMode = !isDrawingMode; toggleDrawingState(); };
+    // Buttons
+    document.getElementById("pencilBtn").onclick = () => { isDrawingMode = !isDrawingMode; toggleDrawingState(); };
     
-    brushSizeBtn.onclick = () => togglePopup("brushPopup");
-    sizeSlider.oninput = (e) => { currentBrushSize = e.target.value; };
+    document.getElementById("brushSizeBtn").onclick = () => togglePopup("brushPopup");
+    document.getElementById("sizeSlider").oninput = (e) => { currentBrushSize = e.target.value; };
 
-    colorPaletteBtn.onclick = () => {
+    document.getElementById("colorPaletteBtn").onclick = () => {
         togglePopup("colorPopup");
-        if (isEraser) { isEraser = false; eraserBtn.classList.remove("active"); }
+        if (isEraser) toggleEraser(false);
     };
-    
+
     document.querySelectorAll(".color-swatch").forEach(swatch => {
         swatch.onclick = () => {
             currentColor = swatch.getAttribute("data-color");
             document.getElementById("colorPopup").style.display = "none";
-            // Auto-enable drawing when color selected
-            if (!isDrawingMode) {
-                isDrawingMode = true;
-                toggleDrawingState();
-            }
+            if (!isDrawingMode) { isDrawingMode = true; toggleDrawingState(); }
         };
     });
 
-    eraserBtn.onclick = () => {
+    document.getElementById("eraserBtn").onclick = () => {
         if (!isDrawingMode) return;
-        isEraser = !isEraser;
-        eraserBtn.classList.toggle("active", isEraser);
+        toggleEraser(!isEraser);
     };
 
-    clearBtn.onclick = () => {
+    document.getElementById("clearBtn").onclick = () => {
         clearCanvas();
-        // Also exit drawing mode on clear
         if (isDrawingMode) { isDrawingMode = false; toggleDrawingState(); }
     };
 
-    undoBtn.onclick = undoLastStroke;
-    redoBtn.onclick = redoLastStroke;
+    document.getElementById("undoBtn").onclick = undoLastStroke;
+    document.getElementById("redoBtn").onclick = redoLastStroke;
 
-    // Canvas Events
+    // Canvas Listeners
     canvas.addEventListener('mousedown', startDraw);
     canvas.addEventListener('mousemove', draw);
     canvas.addEventListener('mouseup', stopDraw);
     canvas.addEventListener('mouseout', stopDraw);
-    
-    // Touch Events
     canvas.addEventListener('touchstart', (e) => { if(e.cancelable) e.preventDefault(); startDraw(e.touches[0]); }, {passive: false});
     canvas.addEventListener('touchmove', (e) => { if(e.cancelable) e.preventDefault(); draw(e.touches[0]); }, {passive: false});
     canvas.addEventListener('touchend', stopDraw);
@@ -151,55 +146,54 @@ function initDrawingTools() {
 
 function resizeCanvas() {
     if (canvas && canvas.parentElement) {
-        // MATCH CSS: Width is parent width minus sidebar (140px)
-        canvas.width = canvas.parentElement.clientWidth - 140;
+        // WIDTH = Screen Width - Sidebar Width (170px)
+        canvas.width = canvas.parentElement.clientWidth - 170;
         canvas.height = canvas.parentElement.clientHeight;
-        
-        // Note: Resizing clears canvas. If persistence is needed, we'd redraw history here.
-        // For now, we accept clear-on-resize to keep logic simple.
     }
+}
+
+function toggleEraser(active) {
+    isEraser = active;
+    document.getElementById("eraserBtn").classList.toggle("active", active);
 }
 
 function togglePopup(id) {
     const popups = document.querySelectorAll(".tool-popup");
-    popups.forEach(p => {
-        p.style.display = (p.id === id && p.style.display !== "flex") ? "flex" : "none";
-    });
+    popups.forEach(p => p.style.display = (p.id === id && p.style.display !== "flex") ? "flex" : "none");
 }
 
 function toggleDrawingState() {
     const pencilBtn = document.getElementById("pencilBtn");
     const lockIcon = document.getElementById("lockIndicatorTool");
+    const historyTools = document.getElementById("historyTools");
     const controls = document.getElementById("controls");
 
     if (isDrawingMode) {
-        // ACTIVATE
+        // ON
         pencilBtn.classList.add("active");
         lockIcon.style.display = "block";
+        historyTools.style.display = "flex"; // SHOW Undo/Redo
+        
         canvas.classList.add("active");
-        controls.classList.add("disabled"); // Dim bottom controls
+        controls.classList.add("disabled");
 
-        // Pause idle
         resetIdleTimer();
         if(viewer) viewer.stopAutoRotate();
 
-        // Init history if fresh
         if (drawingHistory.length === 0) saveHistoryState();
 
     } else {
-        // DEACTIVATE
+        // OFF
         pencilBtn.classList.remove("active");
         lockIcon.style.display = "none";
+        historyTools.style.display = "none"; // HIDE Undo/Redo
         document.querySelectorAll(".tool-popup").forEach(p => p.style.display = "none");
         
         canvas.classList.remove("active");
         controls.classList.remove("disabled");
 
-        clearCanvas(); // VANISH drawings
-        
-        isEraser = false;
-        document.getElementById("eraserBtn").classList.remove("active");
-        
+        clearCanvas(); 
+        toggleEraser(false);
         startIdleCountdown();
     }
 }
@@ -244,7 +238,7 @@ function loadHistoryState(dataUrl) {
     };
 }
 
-// DRAWING
+// DRAW
 function startDraw(e) {
     if (!isDrawingMode) return;
     isDrawing = true;
@@ -281,7 +275,6 @@ function stopDraw() {
 // --- 3. VIEWER LOGIC ---
 
 function loadViewer(index) {
-    if (!images[index]) return;
     const imgData = images[index];
     activeImageSrc = imgData.src;
 
@@ -361,12 +354,10 @@ function updateBadge(type) {
 }
 
 function transitionToImage(index) {
-    // Force Exit Drawing Mode if active
     if (isDrawingMode) {
         isDrawingMode = false;
-        toggleDrawingState(); // This clears the canvas & resets controls
+        toggleDrawingState(); 
     }
-
     const overlay = document.getElementById('fadeOverlay');
     overlay.classList.add('active');
     setTimeout(() => {
@@ -378,3 +369,73 @@ function transitionToImage(index) {
 
 function buildThumbnails() {
     const panel = document.getElementById("thumbPanel");
+    panel.innerHTML = "";
+    images.forEach((img, i) => {
+        const thumb = document.createElement("img");
+        thumb.src = `https://wsrv.nl/?url=${encodeURIComponent(img.originalPath)}&w=200&q=70&output=webp`;
+        thumb.className = "thumb";
+        thumb.crossOrigin = "Anonymous"; 
+        thumb.onclick = () => { resetIdleTimer(); transitionToImage(i); };
+        panel.appendChild(thumb);
+    });
+}
+
+function updateThumbs() {
+    document.querySelectorAll(".thumb").forEach((t, i) => {
+        t.classList.toggle("active", i === currentIndex);
+        if(i === currentIndex) t.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+}
+
+// --- IDLE SYSTEM ---
+function startIdleCountdown() {
+    clearTimeout(idleTimer); clearTimeout(slideTimer);
+    if (isDrawingMode) return;
+    idleTimer = setTimeout(onIdleStart, IDLE_DELAY);
+    slideTimer = setTimeout(onAutoPlayNext, AUTO_PLAY_DELAY);
+}
+
+function resetIdleTimer() {
+    clearTimeout(idleTimer); clearTimeout(slideTimer);
+    document.getElementById('idleIndicator').classList.remove('visible');
+    if (viewer) viewer.stopAutoRotate();
+}
+
+function onIdleStart() {
+    if (isDrawingMode) return;
+    document.getElementById('idleIndicator').classList.add('visible');
+    if (viewer) {
+        const maxFov = viewer.getHfovBounds ? viewer.getHfovBounds()[1] : 120;
+        viewer.setHfov(maxFov, 1000); 
+        viewer.setPitch(0, 1000);
+        viewer.startAutoRotate(-5); 
+    }
+}
+
+function onAutoPlayNext() {
+    if (isDrawingMode) return;
+    let nextIndex = (currentIndex + 1) % images.length;
+    transitionToImage(nextIndex);
+}
+
+document.getElementById("prevBtn").onclick = () => {
+    resetIdleTimer();
+    let newIndex = (currentIndex - 1 + images.length) % images.length;
+    transitionToImage(newIndex);
+};
+document.getElementById("nextBtn").onclick = () => {
+    resetIdleTimer();
+    let newIndex = (currentIndex + 1) % images.length;
+    transitionToImage(newIndex);
+};
+const fsBtn = document.getElementById("fsBtn");
+fsBtn.onclick = () => {
+    resetIdleTimer();
+    if (!document.fullscreenElement) {
+        document.getElementById("app").requestFullscreen().catch(console.log);
+    } else {
+        document.exitFullscreen();
+    }
+};
+
+initGallery();
