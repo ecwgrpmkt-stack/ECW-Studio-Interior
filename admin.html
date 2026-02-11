@@ -1,60 +1,95 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>ECW Admin Dashboard</title>
-    <link rel="stylesheet" href="style.css">
-</head>
-<body class="admin-body">
-
-    <nav class="admin-nav">
-        <div class="logo">ECW Studio <span>Admin</span></div>
-        <div class="nav-right">
-            <button onclick="logout()" class="logout-btn">Logout</button>
-        </div>
-    </nav>
-
-    <div class="admin-container">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>360 Gallery - Admin Panel</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; --text: #1e293b; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); margin: 20px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
         
-        <div class="admin-panel upload-panel">
-            <h2>Upload New Image</h2>
-            <div class="upload-controls">
-                <div class="input-group">
-                    <label>GitHub Personal Access Token (Classic)</label>
-                    <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx" class="token-input">
-                </div>
-                
-                <div class="file-drop-area" id="dropArea">
-                    <input type="file" id="fileInput" accept="image/jpeg, image/png">
-                    <p>Drag & Drop Image Here or <span>Browse</span></p>
-                </div>
-                <div id="uploadStatus" class="status-msg"></div>
+        /* Token & Repo Section */
+        .config-card { background: #f1f5f9; padding: 20px; border-radius: 8px; margin-bottom: 25px; border-left: 4px solid var(--primary); }
+        .input-group { margin-bottom: 15px; position: relative; }
+        .field-wrapper { display: flex; align-items: center; gap: 10px; margin-top: 5px; }
+        input[readonly] { background: #e2e8f0; cursor: not-allowed; }
+        input { flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+        
+        .repo-display { font-size: 0.9em; color: #64748b; display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+        .repo-link { color: var(--primary); text-decoration: none; font-weight: 500; }
+
+        /* Action Buttons */
+        .btn-lock { background: #64748b; color: white; border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+        .btn-lock.unlocked { background: #ef4444; }
+
+        /* Table Styles */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        .img-preview { width: 60px; height: 40px; object-fit: cover; border-radius: 4px; }
+
+        /* Rename Modal */
+        #rename-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; justify-content: center; align-items: center; z-index: 100; }
+        .modal-content { background: white; padding: 25px; border-radius: 12px; width: 400px; }
+        .rename-flex { display: flex; align-items: center; background: #f1f5f9; padding: 5px; border-radius: 6px; border: 1px solid #cbd5e1; }
+        .rename-flex input { border: none; background: transparent; outline: none; padding: 8px; flex: 1; }
+        .ext-label { padding: 0 10px; color: #64748b; font-weight: bold; background: #e2e8f0; height: 100%; display: flex; align-items: center; border-radius: 4px; }
+        .modal-btns { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2><i class="fas fa-tools"></i> Gallery Administration</h2>
+
+    <div class="config-card">
+        <div class="input-group">
+            <label>GitHub Personal Access Token (Classic)</label>
+            <div class="field-wrapper">
+                <input type="password" id="gh-token" readonly placeholder="Enter Token...">
+                <button id="lock-toggle" class="btn-lock"><i id="lock-icon" class="fas fa-lock"></i></button>
             </div>
         </div>
-
-        <div class="admin-panel list-panel">
-            <div class="panel-header">
-                <h2>Repository Images</h2>
-                <button onclick="loadImages()" class="refresh-btn">Refresh List</button>
-            </div>
-
-            <table class="image-table">
-                <thead>
-                    <tr>
-                        <th>Preview</th>
-                        <th>Filename</th>
-                        <th>Dimensions</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="imageTableBody">
-                    <tr><td colspan="5" style="text-align:center;">Loading...</td></tr>
-                </tbody>
-            </table>
+        <div class="repo-display">
+            <i class="fas fa-link"></i> Repository: 
+            <a id="repo-url" class="repo-link" href="https://github.com/ecwgrpmkt-stack/360_gallery" target="_blank">ecwgrpmkt-stack/360_gallery</a>
         </div>
-
     </div>
-    <script src="admin.js"></script>
+
+    <div class="upload-section">
+        <input type="file" id="file-input" accept="image/*">
+        <button onclick="handleUpload()" class="btn-lock" style="background:var(--primary)">Upload Image</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Preview</th>
+                <th>Filename</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="image-table-body">
+            </tbody>
+    </table>
+</div>
+
+<div id="rename-modal">
+    <div class="modal-content">
+        <h3>Rename Image</h3>
+        <p style="font-size: 0.8em; color: gray;">Extension is protected and cannot be changed.</p>
+        <div class="rename-flex">
+            <input type="text" id="new-name-input" placeholder="New filename">
+            <span id="ext-display" class="ext-label">.jpg</span>
+        </div>
+        <div class="modal-btns">
+            <button onclick="closeRenameModal()" class="btn-lock">Cancel</button>
+            <button id="save-rename-btn" class="btn-lock" style="background: var(--primary)">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<script src="admin.js"></script>
 </body>
 </html>
