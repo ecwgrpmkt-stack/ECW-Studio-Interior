@@ -1,155 +1,137 @@
-const REPO_URL = "ecwgrpmkt-stack/360_gallery";
-const ADMIN_PASS = "ecw123";
-let currentToken = localStorage.getItem('gh_token') || "";
+// CONFIGURATION
+const REPO_OWNER = "ecwgrpmkt-stack";
+const REPO_NAME = "360_gallery";
+const IMAGE_FOLDER = "images";
 
-window.onload = () => { if (currentToken) loadAssets(); };
+if (sessionStorage.getItem('ecw_auth') !== 'true') window.location.href = 'index.html';
 
-const showLoader = () => document.getElementById('loading-modal').style.display = 'flex';
-const hideLoader = () => document.getElementById('loading-modal').style.display = 'none';
+function logout() { sessionStorage.removeItem('ecw_auth'); window.location.href = 'index.html'; }
+const savedToken = localStorage.getItem('ecw_gh_token');
+if (savedToken) document.getElementById('githubToken').value = savedToken;
 
-function toggleLock(type) {
-    const field = type === 'token' ? document.getElementById('gh-token') : document.getElementById('gh-repo');
-    const icon = document.getElementById(`lock-icon-${type}`);
+async function loadImages() {
+    const tableBody = document.getElementById('imageTableBody');
+    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px;">Fetching repository data...</td></tr>`;
+    try {
+        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}`);
+        if (!response.ok) throw new Error("Failed to fetch image list");
+        
+        const data = await response.json();
+        const images = data.filter(file => file.name.match(/\.(jpg|jpeg|png)$/i));
 
-    if (field.readOnly) {
-        const pass = prompt("Admin Credential Required:");
-        if (pass === ADMIN_PASS) {
-            field.readOnly = false;
-            field.type = "text";
-            field.value = type === 'token' ? currentToken : REPO_URL;
-            icon.className = "fas fa-lock-open";
-        } else { alert("Access Denied"); }
-    } else {
-        if (type === 'token') {
-            currentToken = field.value;
-            localStorage.setItem('gh_token', currentToken);
+        tableBody.innerHTML = ""; 
+
+        for (const file of images) {
+            const row = document.createElement('tr');
+            const isDisabled = file.name.startsWith("disabled_");
+            const cleanName = isDisabled ? file.name.replace("disabled_", "") : file.name;
+            const statusBadge = isDisabled ? `<span class="badge warning">Hidden</span>` : `<span class="badge success">Live</span>`;
+            
+            const actions = `
+                <div class="action-buttons">
+                    <button onclick="renameFile('${file.name}', '${file.sha}')" class="btn-mini btn-blue" title="Rename">✎</button>
+                    <button onclick="toggleVisibility('${file.name}', '${file.sha}')" class="btn-mini btn-yellow" title="${isDisabled ? 'Show' : 'Hide'}">${isDisabled ? '👁️' : '🚫'}</button>
+                    <button onclick="deleteFile('${file.name}', '${file.sha}')" class="btn-mini btn-red" title="Delete">🗑️</button>
+                </div>
+            `;
+            row.innerHTML = `
+                <td><img src="${file.download_url}" class="admin-thumb" style="opacity: ${isDisabled ? 0.5 : 1}"></td>
+                <td style="color: ${isDisabled ? '#888' : '#fff'}">${cleanName}</td>
+                <td class="dim-cell">...</td>
+                <td>${statusBadge}</td>
+                <td>${actions}</td>
+            `;
+            tableBody.appendChild(row);
+            analyzeImage(file.download_url, row);
         }
-        field.readOnly = true;
-        field.type = "password";
-        field.value = "********************";
-        icon.className = "fas fa-lock";
-        loadAssets();
+    } catch (error) {
+        tableBody.innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Error: ${error.message}</td></tr>`;
     }
 }
 
-async function loadAssets() {
-    if (!currentToken) return;
-    const tbody = document.getElementById('asset-table');
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center"><i class="fas fa-spinner fa-spin"></i> Fetching repository...</td></tr>';
-    
-    try {
-        const res = await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images?t=${Date.now()}`, {
-            headers: { 'Authorization': `token ${currentToken}` }
-        });
-        if(!res.ok) throw new Error("Invalid Token or Repo");
-        
-        const files = await res.json();
-        tbody.innerHTML = "";
-
-        files.forEach(file => {
-            if (file.type === "file") {
-                const isHidden = file.name.startsWith('hidden_');
-                const displayName = isHidden ? file.name.replace('hidden_', '') : file.name;
-                
-                tbody.innerHTML += `
-                    <tr>
-                        <td><img src="${file.download_url}" class="admin-thumb"></td>
-                        <td>${displayName}</td>
-                        <td><span class="badge ${isHidden ? 'warning' : 'success'}">${isHidden ? 'HIDDEN' : 'LIVE'}</span></td>
-                        <td style="display:flex; gap:8px">
-                            <button class="btn btn-secondary" title="${isHidden ? 'Show' : 'Hide'}" onclick="toggleVisibility('${file.name}', ${isHidden}, '${file.sha}')">
-                                <i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i>
-                            </button>
-                            <button class="btn btn-secondary" title="Rename" onclick="openRename('${file.name}', '${file.sha}')"><i class="fas fa-edit"></i></button>
-                            <button class="btn btn-secondary" title="Delete" style="color:#ff4444" onclick="deleteAsset('${file.name}', '${file.sha}')"><i class="fas fa-trash"></i></button>
-                        </td>
-                    </tr>
-                `;
-            }
-        });
-    } catch (e) { tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:#ff4444;">Error: ${e.message}</td></tr>`; }
+function analyzeImage(url, rowElement) {
+    const img = new Image(); img.crossOrigin = "Anonymous"; img.src = url;
+    img.onload = function() { rowElement.cells[2].innerText = `${img.naturalWidth} x ${img.naturalHeight}`; };
 }
 
-async function handleUpload(input) {
-    const file = input.files[0];
-    if (!file) return;
-
-    showLoader();
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const base64Content = e.target.result.split(',')[1];
-        try {
-            await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images/${file.name}`, {
-                method: 'PUT',
-                headers: { 'Authorization': `token ${currentToken}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: `Admin: Uploaded ${file.name}`, content: base64Content })
-            });
-            input.value = "";
-            loadAssets();
-        } catch (err) { alert("Upload Failed."); }
-        finally { hideLoader(); }
+async function githubRequest(endpoint, method = 'GET', body = null) {
+    const token = document.getElementById('githubToken').value.trim();
+    if (!token) { alert("Please enter your GitHub Token first."); return null; }
+    
+    const options = {
+        method: method,
+        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' }
     };
-    reader.readAsDataURL(file);
+    if (body) options.body = JSON.stringify(body);
+    const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/${endpoint}`, options);
+    return response;
 }
 
-async function toggleVisibility(oldName, currentlyHidden, sha) {
-    const newName = currentlyHidden ? oldName.replace('hidden_', '') : 'hidden_' + oldName;
-    await renameFileOnGithub(oldName, newName, sha);
+async function deleteFile(filename, sha) {
+    if (!confirm(`Permanently DELETE "${filename}"?`)) return;
+    const btn = event.target; btn.innerText = "⏳"; btn.disabled = true;
+    const res = await githubRequest(`contents/${IMAGE_FOLDER}/${filename}`, 'DELETE', { message: `Delete ${filename}`, sha: sha });
+    if (res && res.ok) loadImages();
+    else { alert("Delete failed."); btn.innerText = "🗑️"; btn.disabled = false; }
 }
 
-let renameSha = "", oldFileName = "";
-function openRename(name, sha) {
-    oldFileName = name; renameSha = sha;
-    const dot = name.lastIndexOf('.');
-    document.getElementById('rename-input').value = name.substring(0, dot).replace('hidden_', '');
-    document.getElementById('ext-label').innerText = name.substring(dot);
-    document.getElementById('rename-modal').style.display = 'flex';
+async function toggleVisibility(filename, sha) {
+    const isHidden = filename.startsWith("disabled_");
+    const newName = isHidden ? filename.replace("disabled_", "") : `disabled_${filename}`;
+    performRename(filename, newName, sha, "Toggling Visibility...");
 }
 
-function closeModal() { document.getElementById('rename-modal').style.display = 'none'; }
+async function renameFile(oldName, sha) {
+    const newName = prompt("Enter new filename:", oldName);
+    if (!newName || newName === oldName) return;
+    if (!newName.match(/\.(jpg|jpeg|png)$/i)) { alert("Filename must end with .jpg, .jpeg, or .png"); return; }
+    performRename(oldName, newName, sha, "Renaming File...");
+}
 
-document.getElementById('confirm-rename').onclick = async () => {
-    const newBase = document.getElementById('rename-input').value.trim();
-    if(!newBase) return alert("Name cannot be empty");
-    const ext = document.getElementById('ext-label').innerText;
+async function performRename(oldName, newName, sha, loadingMsg) {
+    const statusMsg = document.getElementById('uploadStatus');
+    statusMsg.innerHTML = `<span style="color:orange">${loadingMsg} (Please wait)</span>`;
+
+    try {
+        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/${oldName}`;
+        const fetchRes = await fetch(rawUrl);
+        const blob = await fetchRes.blob();
+        
+        const reader = new FileReader(); reader.readAsDataURL(blob);
+        reader.onloadend = async function() {
+            const base64data = reader.result.split(',')[1];
+            const putRes = await githubRequest(`contents/${IMAGE_FOLDER}/${newName}`, 'PUT', { message: `Rename ${oldName} to ${newName}`, content: base64data });
+            if (!putRes.ok) throw new Error("Failed to create new file.");
+            
+            const delRes = await githubRequest(`contents/${IMAGE_FOLDER}/${oldName}`, 'DELETE', { message: `Cleanup old file`, sha: sha });
+            if (delRes.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Success!</span>`; loadImages(); }
+            else { throw new Error("Created new file but failed to delete old one."); }
+        };
+    } catch (err) {
+        statusMsg.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
+    }
+}
+
+const fileInput = document.getElementById('fileInput');
+fileInput.addEventListener('change', handleUpload);
+
+async function handleUpload() {
+    const file = fileInput.files[0];
+    const token = document.getElementById('githubToken').value.trim();
+    const statusMsg = document.getElementById('uploadStatus');
+
+    if (!file || !token) { statusMsg.innerHTML = "Error: Missing File or Token"; return; }
     
-    const prefix = oldFileName.startsWith('hidden_') ? 'hidden_' : '';
-    await renameFileOnGithub(oldFileName, prefix + newBase + ext, renameSha);
-    closeModal();
-};
+    localStorage.setItem('ecw_gh_token', token);
+    statusMsg.innerText = "Reading file...";
 
-async function renameFileOnGithub(oldName, newName, sha) {
-    showLoader();
-    try {
-        const getRes = await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images/${oldName}?t=${Date.now()}`, { headers: { 'Authorization': `token ${currentToken}` }});
-        const fileData = await getRes.json();
-
-        await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images/${newName}`, {
-            method: 'PUT',
-            headers: { 'Authorization': `token ${currentToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: `Admin: Renamed ${oldName} to ${newName}`, content: fileData.content })
-        });
-
-        await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images/${oldName}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `token ${currentToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: `Admin: Deleted old file ${oldName}`, sha: sha })
-        });
-        loadAssets();
-    } catch (error) { alert("Rename operation failed."); console.error(error); }
-    finally { hideLoader(); }
+    const reader = new FileReader(); reader.readAsDataURL(file);
+    reader.onload = async function() {
+        const base64Content = reader.result.split(',')[1];
+        statusMsg.innerText = "Uploading...";
+        const res = await githubRequest(`contents/${IMAGE_FOLDER}/${file.name}`, 'PUT', { message: `Upload ${file.name}`, content: base64Content });
+        if (res && res.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Upload Complete!</span>`; loadImages(); }
+        else { statusMsg.innerText = "Upload Failed."; }
+    };
 }
-
-async function deleteAsset(name, sha) {
-    if(!confirm(`Are you sure you want to permanently delete ${name}?`)) return;
-    showLoader();
-    try {
-        await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images/${name}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `token ${currentToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: `Admin: Deleted ${name}`, sha: sha })
-        });
-        loadAssets();
-    } catch (error) { alert("Delete failed."); }
-    finally { hideLoader(); }
-}
+loadImages();
