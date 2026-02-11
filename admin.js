@@ -1,137 +1,125 @@
-// CONFIGURATION
-const REPO_OWNER = "ecwgrpmkt-stack";
-const REPO_NAME = "360_gallery";
-const IMAGE_FOLDER = "images";
+// --- CONFIGURATION ---
+const REPO_OWNER = 'ecwgrpmkt-stack';
+const REPO_NAME = '360_gallery';
+const ADMIN_USER = 'ECW';
+const ADMIN_PASS = 'ecw123';
 
-if (sessionStorage.getItem('ecw_auth') !== 'true') window.location.href = 'index.html';
+let currentRenameFile = null;
 
-function logout() { sessionStorage.removeItem('ecw_auth'); window.location.href = 'index.html'; }
-const savedToken = localStorage.getItem('ecw_gh_token');
-if (savedToken) document.getElementById('githubToken').value = savedToken;
+// --- INITIALIZATION ---
+document.addEventListener('DOMContentLoaded', () => {
+    const savedToken = localStorage.getItem('gh_token');
+    if (savedToken) {
+        document.getElementById('gh-token').value = savedToken;
+    }
+    loadImages();
+});
 
-async function loadImages() {
-    const tableBody = document.getElementById('imageTableBody');
-    tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px;">Fetching repository data...</td></tr>`;
-    try {
-        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}`);
-        if (!response.ok) throw new Error("Failed to fetch image list");
-        
-        const data = await response.json();
-        const images = data.filter(file => file.name.match(/\.(jpg|jpeg|png)$/i));
+// --- SECTION 1: TOKEN LOCK LOGIC ---
+const tokenInput = document.getElementById('gh-token');
+const lockBtn = document.getElementById('lock-toggle');
+const lockIcon = document.getElementById('lock-icon');
 
-        tableBody.innerHTML = ""; 
-
-        for (const file of images) {
-            const row = document.createElement('tr');
-            const isDisabled = file.name.startsWith("disabled_");
-            const cleanName = isDisabled ? file.name.replace("disabled_", "") : file.name;
-            const statusBadge = isDisabled ? `<span class="badge warning">Hidden</span>` : `<span class="badge success">Live</span>`;
-            
-            const actions = `
-                <div class="action-buttons">
-                    <button onclick="renameFile('${file.name}', '${file.sha}')" class="btn-mini btn-blue" title="Rename">✎</button>
-                    <button onclick="toggleVisibility('${file.name}', '${file.sha}')" class="btn-mini btn-yellow" title="${isDisabled ? 'Show' : 'Hide'}">${isDisabled ? '👁️' : '🚫'}</button>
-                    <button onclick="deleteFile('${file.name}', '${file.sha}')" class="btn-mini btn-red" title="Delete">🗑️</button>
-                </div>
-            `;
-            row.innerHTML = `
-                <td><img src="${file.download_url}" class="admin-thumb" style="opacity: ${isDisabled ? 0.5 : 1}"></td>
-                <td style="color: ${isDisabled ? '#888' : '#fff'}">${cleanName}</td>
-                <td class="dim-cell">...</td>
-                <td>${statusBadge}</td>
-                <td>${actions}</td>
-            `;
-            tableBody.appendChild(row);
-            analyzeImage(file.download_url, row);
+lockBtn.addEventListener('click', () => {
+    if (tokenInput.readOnly) {
+        // Unlock attempt
+        const userPass = prompt("Enter Admin Password to modify settings:");
+        if (userPass === ADMIN_PASS) {
+            tokenInput.readOnly = false;
+            tokenInput.type = "text";
+            lockIcon.className = "fas fa-lock-open";
+            lockBtn.classList.add('unlocked');
+        } else {
+            alert("Incorrect password!");
         }
-    } catch (error) {
-        tableBody.innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Error: ${error.message}</td></tr>`;
+    } else {
+        // Locking
+        tokenInput.readOnly = true;
+        tokenInput.type = "password";
+        lockIcon.className = "fas fa-lock";
+        lockBtn.classList.remove('unlocked');
+        localStorage.setItem('gh_token', tokenInput.value);
+        alert("Token locked and saved.");
     }
+});
+
+// --- SECTION 2: SMART RENAME LOGIC ---
+function openRenameModal(fileName) {
+    currentRenameFile = fileName;
+    const lastDot = fileName.lastIndexOf('.');
+    const nameOnly = fileName.substring(0, lastDot);
+    const extOnly = fileName.substring(lastDot);
+
+    document.getElementById('new-name-input').value = nameOnly;
+    document.getElementById('ext-display').innerText = extOnly;
+    document.getElementById('rename-modal').style.display = 'flex';
 }
 
-function analyzeImage(url, rowElement) {
-    const img = new Image(); img.crossOrigin = "Anonymous"; img.src = url;
-    img.onload = function() { rowElement.cells[2].innerText = `${img.naturalWidth} x ${img.naturalHeight}`; };
+function closeRenameModal() {
+    document.getElementById('rename-modal').style.display = 'none';
 }
 
-async function githubRequest(endpoint, method = 'GET', body = null) {
-    const token = document.getElementById('githubToken').value.trim();
-    if (!token) { alert("Please enter your GitHub Token first."); return null; }
+document.getElementById('save-rename-btn').addEventListener('click', async () => {
+    const newName = document.getElementById('new-name-input').value.trim();
+    const ext = document.getElementById('ext-display').innerText;
     
-    const options = {
-        method: method,
-        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' }
-    };
-    if (body) options.body = JSON.stringify(body);
-    const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/${endpoint}`, options);
-    return response;
-}
+    if (!newName) return alert("Please enter a name");
+    
+    const finalName = newName + ext;
+    console.log(`Debug: Renaming ${currentRenameFile} to ${finalName}`);
+    
+    // GitHub API Move/Rename Logic (Simplified)
+    await performRename(currentRenameFile, finalName);
+    closeRenameModal();
+    loadImages();
+});
 
-async function deleteFile(filename, sha) {
-    if (!confirm(`Permanently DELETE "${filename}"?`)) return;
-    const btn = event.target; btn.innerText = "⏳"; btn.disabled = true;
-    const res = await githubRequest(`contents/${IMAGE_FOLDER}/${filename}`, 'DELETE', { message: `Delete ${filename}`, sha: sha });
-    if (res && res.ok) loadImages();
-    else { alert("Delete failed."); btn.innerText = "🗑️"; btn.disabled = false; }
-}
-
-async function toggleVisibility(filename, sha) {
-    const isHidden = filename.startsWith("disabled_");
-    const newName = isHidden ? filename.replace("disabled_", "") : `disabled_${filename}`;
-    performRename(filename, newName, sha, "Toggling Visibility...");
-}
-
-async function renameFile(oldName, sha) {
-    const newName = prompt("Enter new filename:", oldName);
-    if (!newName || newName === oldName) return;
-    if (!newName.match(/\.(jpg|jpeg|png)$/i)) { alert("Filename must end with .jpg, .jpeg, or .png"); return; }
-    performRename(oldName, newName, sha, "Renaming File...");
-}
-
-async function performRename(oldName, newName, sha, loadingMsg) {
-    const statusMsg = document.getElementById('uploadStatus');
-    statusMsg.innerHTML = `<span style="color:orange">${loadingMsg} (Please wait)</span>`;
+// --- SECTION 3: GITHUB API OPERATIONS ---
+async function loadImages() {
+    const token = tokenInput.value;
+    if (!token) return;
 
     try {
-        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/${oldName}`;
-        const fetchRes = await fetch(rawUrl);
-        const blob = await fetchRes.blob();
-        
-        const reader = new FileReader(); reader.readAsDataURL(blob);
-        reader.onloadend = async function() {
-            const base64data = reader.result.split(',')[1];
-            const putRes = await githubRequest(`contents/${IMAGE_FOLDER}/${newName}`, 'PUT', { message: `Rename ${oldName} to ${newName}`, content: base64data });
-            if (!putRes.ok) throw new Error("Failed to create new file.");
-            
-            const delRes = await githubRequest(`contents/${IMAGE_FOLDER}/${oldName}`, 'DELETE', { message: `Cleanup old file`, sha: sha });
-            if (delRes.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Success!</span>`; loadImages(); }
-            else { throw new Error("Created new file but failed to delete old one."); }
-        };
+        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/images`, {
+            headers: { 'Authorization': `token ${token}` }
+        });
+        const data = await response.json();
+        renderTable(data);
     } catch (err) {
-        statusMsg.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
+        console.error("Debug: Load failed", err);
     }
 }
 
-const fileInput = document.getElementById('fileInput');
-fileInput.addEventListener('change', handleUpload);
+function renderTable(files) {
+    const tbody = document.getElementById('image-table-body');
+    tbody.innerHTML = '';
+    
+    files.forEach(file => {
+        if (file.type === 'file') {
+            const row = `
+                <tr>
+                    <td><img src="${file.download_url}" class="img-preview"></td>
+                    <td>${file.name}</td>
+                    <td>
+                        <button onclick="openRenameModal('${file.name}')"><i class="fas fa-edit"></i></button>
+                        <button onclick="deleteFile('${file.sha}', '${file.name}')"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>
+            `;
+            tbody.innerHTML += row;
+        }
+    });
+}
+
+async function performRename(oldName, newName) {
+    const token = tokenInput.value;
+    alert(`GitHub Logic: Moving ${oldName} to ${newName}. (Requires API PUT then DELETE)`);
+    // Note: GitHub API rename is a 2-step process (Copy to new path, then Delete old path)
+}
 
 async function handleUpload() {
-    const file = fileInput.files[0];
-    const token = document.getElementById('githubToken').value.trim();
-    const statusMsg = document.getElementById('uploadStatus');
-
-    if (!file || !token) { statusMsg.innerHTML = "Error: Missing File or Token"; return; }
-    
-    localStorage.setItem('ecw_gh_token', token);
-    statusMsg.innerText = "Reading file...";
-
-    const reader = new FileReader(); reader.readAsDataURL(file);
-    reader.onload = async function() {
-        const base64Content = reader.result.split(',')[1];
-        statusMsg.innerText = "Uploading...";
-        const res = await githubRequest(`contents/${IMAGE_FOLDER}/${file.name}`, 'PUT', { message: `Upload ${file.name}`, content: base64Content });
-        if (res && res.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Upload Complete!</span>`; loadImages(); }
-        else { statusMsg.innerText = "Upload Failed."; }
-    };
+    const file = document.getElementById('file-input').files[0];
+    if (!file) return alert("Select a file first");
+    console.log("Debug: Starting upload for", file.name);
+    // Add your base64 upload logic here
 }
-loadImages();
