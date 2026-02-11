@@ -38,13 +38,39 @@ document.getElementById('copyRepoBtn').onclick = () => {
 const modal = document.getElementById('customModal');
 function closeModal() { modal.classList.remove('active'); }
 
-// --- 2. FAST LOAD IMAGES ---
+// --- 2. ROW BUILDER (For Instant UI Updates) ---
+function buildRowHTML(file) {
+    const isDisabled = file.name.startsWith("disabled_");
+    const cleanName = isDisabled ? file.name.replace("disabled_", "") : file.name;
+    const statusBadge = isDisabled ? `<span class="badge warning">Hidden</span>` : `<span class="badge success">Live</span>`;
+    const safeName = file.name.replace(/'/g, "\\'"); 
+    const fastThumbUrl = `https://wsrv.nl/?url=${encodeURIComponent(file.download_url)}&w=150&q=60&output=webp`;
+
+    const actions = `
+        <div class="action-buttons">
+            <button onclick="openRenameModal('${safeName}', '${file.sha}', '${file.download_url}')" class="btn-mini btn-blue" title="Rename">✎</button>
+            <button onclick="toggleVisibility('${safeName}', '${file.sha}', '${file.download_url}')" class="btn-mini btn-yellow" title="${isDisabled ? 'Show' : 'Hide'}">${isDisabled ? '👁️' : '🚫'}</button>
+            <button onclick="openDeleteModal('${safeName}', '${file.sha}')" class="btn-mini btn-red" title="Delete">🗑️</button>
+        </div>
+    `;
+    
+    return `
+        <td><img src="${fastThumbUrl}" class="admin-thumb" style="opacity: ${isDisabled ? 0.5 : 1}"></td>
+        <td style="color: ${isDisabled ? '#888' : '#fff'}">${cleanName}</td>
+        <td class="dim-cell">...</td>
+        <td>${statusBadge}</td>
+        <td>${actions}</td>
+    `;
+}
+
+// --- 3. FAST LOAD IMAGES ---
 async function loadImages() {
     const tableBody = document.getElementById('imageTableBody');
     tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px;">Fetching repository data...</td></tr>`;
     
     try {
-        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}`);
+        // Cache-busting parameter added to force fresh list on manual refresh
+        const response = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${IMAGE_FOLDER}?t=${Date.now()}`);
         if (!response.ok) throw new Error("Failed to fetch image list. Check repository status.");
         
         const data = await response.json();
@@ -54,53 +80,35 @@ async function loadImages() {
 
         for (const file of images) {
             const row = document.createElement('tr');
-            const isDisabled = file.name.startsWith("disabled_");
-            const cleanName = isDisabled ? file.name.replace("disabled_", "") : file.name;
-            const statusBadge = isDisabled ? `<span class="badge warning">Hidden</span>` : `<span class="badge success">Live</span>`;
-            
-            const safeName = file.name.replace(/'/g, "\\'"); 
-            
-            // FAST THUMBNAIL: Use CDN to shrink image to 150px width for the table
-            const fastThumbUrl = `https://wsrv.nl/?url=${encodeURIComponent(file.download_url)}&w=150&q=60&output=webp`;
-
-            const actions = `
-                <div class="action-buttons">
-                    <button onclick="openRenameModal('${safeName}', '${file.sha}', '${file.download_url}')" class="btn-mini btn-blue" title="Rename">✎</button>
-                    <button onclick="toggleVisibility('${safeName}', '${file.sha}', '${file.download_url}')" class="btn-mini btn-yellow" title="${isDisabled ? 'Show' : 'Hide'}">${isDisabled ? '👁️' : '🚫'}</button>
-                    <button onclick="openDeleteModal('${safeName}', '${file.sha}')" class="btn-mini btn-red" title="Delete">🗑️</button>
-                </div>
-            `;
-            
-            row.innerHTML = `
-                <td><img src="${fastThumbUrl}" class="admin-thumb" style="opacity: ${isDisabled ? 0.5 : 1}"></td>
-                <td style="color: ${isDisabled ? '#888' : '#fff'}">${cleanName}</td>
-                <td class="dim-cell">...</td>
-                <td>${statusBadge}</td>
-                <td>${actions}</td>
-            `;
+            row.id = `row-${file.sha}`; // Unique ID for instant targeting
+            row.innerHTML = buildRowHTML(file);
             tableBody.appendChild(row);
             
             // Fetch natural dimensions in background
-            analyzeImage(file.download_url, row);
+            analyzeImage(file.download_url, row.querySelector('.dim-cell'));
         }
     } catch (error) {
         tableBody.innerHTML = `<tr><td colspan="5" style="color:red; text-align:center;">Error: ${error.message}</td></tr>`;
     }
 }
 
-function analyzeImage(url, rowElement) {
+function analyzeImage(url, cellElement) {
     const img = new Image(); img.crossOrigin = "Anonymous"; img.src = url;
-    img.onload = function() { rowElement.cells[2].innerText = `${img.naturalWidth} x ${img.naturalHeight}`; };
+    img.onload = function() { cellElement.innerText = `${img.naturalWidth} x ${img.naturalHeight}`; };
 }
 
-// --- 3. GITHUB API HELPER ---
+// --- 4. GITHUB API HELPER ---
 async function githubRequest(endpoint, method = 'GET', body = null) {
     const token = document.getElementById('githubToken').value.trim();
     if (!token) throw new Error("GitHub Token is empty or missing.");
     
     const options = {
         method: method,
-        headers: { 'Authorization': `token ${token}`, 'Content-Type': 'application/json' }
+        headers: { 
+            'Authorization': `token ${token}`, 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+        }
     };
     if (body) options.body = JSON.stringify(body);
     
@@ -113,7 +121,7 @@ async function githubRequest(endpoint, method = 'GET', body = null) {
     return response;
 }
 
-// --- 4. MODAL WORKFLOWS ---
+// --- 5. MODAL WORKFLOWS & INSTANT UPDATES ---
 
 // A. DELETE WORKFLOW
 function openDeleteModal(filename, sha) {
@@ -134,14 +142,17 @@ async function executeDelete(filename, sha) {
     const btn = document.getElementById('confirmActionBtn');
     const statusMsg = document.getElementById('modalStatus');
     btn.innerText = "Deleting..."; btn.disabled = true;
-    statusMsg.innerHTML = `<span style="color:orange">Connecting to GitHub...</span>`;
+    statusMsg.innerHTML = `<span style="color:orange">Removing from GitHub...</span>`;
     
     try {
         await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(filename)}`, 'DELETE', { 
             message: `Delete ${filename} via Admin Panel`, sha: sha 
         });
+        
+        // INSTANT UI UPDATE: Remove the row from the table immediately
+        document.getElementById(`row-${sha}`).remove();
         closeModal();
-        loadImages(); 
+        
     } catch (err) {
         statusMsg.innerHTML = `<span style="color:red">Failed: ${err.message}</span>`;
         btn.innerText = "Yes, Delete"; btn.disabled = false;
@@ -152,11 +163,11 @@ async function executeDelete(filename, sha) {
 function openRenameModal(oldName, sha, downloadUrl) {
     const lastDot = oldName.lastIndexOf('.');
     const baseName = oldName.substring(0, lastDot);
-    const ext = oldName.substring(lastDot); // e.g., ".jpg"
+    const ext = oldName.substring(lastDot);
 
     document.getElementById('modalTitle').innerText = "Rename Image";
     document.getElementById('modalBody').innerHTML = `
-        <label style="color:#888; font-size:0.9rem;">New Filename (Extension protected)</label>
+        <label style="color:#888; font-size:0.9rem;">New Filename</label>
         <div class="rename-input-group">
             <input type="text" id="renameBaseInput" value="${baseName}" autocomplete="off">
             <span class="rename-ext">${ext}</span>
@@ -177,18 +188,35 @@ function openRenameModal(oldName, sha, downloadUrl) {
 
 async function executeRename(oldName, ext, sha, downloadUrl) {
     const baseInput = document.getElementById('renameBaseInput').value.trim();
-    const statusMsg = document.getElementById('modalStatus');
-    const btn = document.getElementById('confirmActionBtn');
-
-    if (!baseInput) { statusMsg.innerHTML = `<span style="color:red">Filename cannot be empty.</span>`; return; }
+    if (!baseInput) { 
+        document.getElementById('modalStatus').innerHTML = `<span style="color:red">Filename cannot be empty.</span>`; 
+        return; 
+    }
     
     const newName = baseInput + ext;
     if (newName === oldName) { closeModal(); return; }
 
-    btn.innerText = "Saving..."; btn.disabled = true;
+    performRename(oldName, newName, sha, downloadUrl, "Saving rename...");
+}
+
+// C. TOGGLE VISIBILITY (Hide/Show)
+async function toggleVisibility(filename, sha, downloadUrl) {
+    const isHidden = filename.startsWith("disabled_");
+    const newName = isHidden ? filename.replace("disabled_", "") : `disabled_${filename}`;
     
+    performRename(filename, newName, sha, downloadUrl, "Toggling visibility...");
+}
+
+// D. UNIVERSAL RENAME ENGINE (Used by Rename & Toggle)
+async function performRename(oldName, newName, oldSha, downloadUrl, loadingMsg) {
+    const statusMsg = document.getElementById('modalStatus') || document.getElementById('uploadStatus');
+    const btn = document.getElementById('confirmActionBtn');
+    
+    if(btn) { btn.innerText = "Processing..."; btn.disabled = true; }
+    statusMsg.innerHTML = `<span style="color:orange">${loadingMsg}</span>`;
+
     try {
-        statusMsg.innerHTML = `<span style="color:orange">Downloading original file...</span>`;
+        // Download old file
         const fetchRes = await fetch(downloadUrl);
         if (!fetchRes.ok) throw new Error("Could not download original file data.");
         const blob = await fetchRes.blob();
@@ -200,55 +228,39 @@ async function executeRename(oldName, ext, sha, downloadUrl) {
             try {
                 const base64data = reader.result.split(',')[1];
                 
-                statusMsg.innerHTML = `<span style="color:orange">Creating new file...</span>`;
-                await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(newName)}`, 'PUT', { 
+                // 1. Put New File
+                const putRes = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(newName)}`, 'PUT', { 
                     message: `Rename ${oldName} to ${newName}`, content: base64data 
                 });
+                const newFileData = await putRes.json();
                 
-                statusMsg.innerHTML = `<span style="color:orange">Cleaning up old file...</span>`;
+                // 2. Delete Old File
                 await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(oldName)}`, 'DELETE', { 
-                    message: `Cleanup old file during rename`, sha: sha 
+                    message: `Cleanup old file during rename`, sha: oldSha 
                 });
                 
-                closeModal();
-                loadImages();
+                // 3. INSTANT UI UPDATE: Update the existing row with new data
+                const row = document.getElementById(`row-${oldSha}`);
+                row.id = `row-${newFileData.content.sha}`; // Update tracking ID
+                row.innerHTML = buildRowHTML(newFileData.content); // Redraw buttons and text
+                analyzeImage(newFileData.content.download_url, row.querySelector('.dim-cell'));
+                
+                if(modal.classList.contains('active')) closeModal();
+                statusMsg.innerHTML = `<span style="color:#00ff00">Success!</span>`;
+                setTimeout(() => statusMsg.innerHTML = '', 3000);
+
             } catch (apiErr) {
-                statusMsg.innerHTML = `<span style="color:red">Rename Error: ${apiErr.message}</span>`;
-                btn.innerText = "Save"; btn.disabled = false;
+                statusMsg.innerHTML = `<span style="color:red">API Error: ${apiErr.message}</span>`;
+                if(btn) { btn.innerText = "Save"; btn.disabled = false; }
             }
         };
     } catch (err) {
         statusMsg.innerHTML = `<span style="color:red">Error: ${err.message}</span>`;
-        btn.innerText = "Save"; btn.disabled = false;
+        if(btn) { btn.innerText = "Save"; btn.disabled = false; }
     }
 }
 
-// C. TOGGLE VISIBILITY (Hide/Show)
-async function toggleVisibility(filename, sha, downloadUrl) {
-    const isHidden = filename.startsWith("disabled_");
-    const newName = isHidden ? filename.replace("disabled_", "") : `disabled_${filename}`;
-    
-    // We reuse the rename logic directly without the modal for a fast 1-click toggle
-    const statusContainer = document.getElementById('uploadStatus');
-    statusContainer.innerHTML = `<span style="color:orange">Toggling visibility (Please wait)...</span>`;
-    
-    try {
-        const fetchRes = await fetch(downloadUrl);
-        const blob = await fetchRes.blob();
-        const reader = new FileReader(); reader.readAsDataURL(blob);
-        reader.onloadend = async function() {
-            try {
-                const base64data = reader.result.split(',')[1];
-                await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(newName)}`, 'PUT', { message: `Toggle visibility`, content: base64data });
-                await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(filename)}`, 'DELETE', { message: `Cleanup old file`, sha: sha });
-                statusContainer.innerHTML = `<span style="color:#00ff00">Visibility toggled!</span>`;
-                loadImages();
-            } catch (err) { statusContainer.innerHTML = `<span style="color:red">${err.message}</span>`; }
-        };
-    } catch(err) { statusContainer.innerHTML = `<span style="color:red">${err.message}</span>`; }
-}
-
-// --- 5. UPLOAD NEW IMAGE ---
+// --- 6. UPLOAD NEW IMAGE (Instant Update) ---
 document.getElementById('fileInput').addEventListener('change', async function() {
     const file = this.files[0];
     const statusMsg = document.getElementById('uploadStatus');
@@ -265,7 +277,7 @@ document.getElementById('fileInput').addEventListener('change', async function()
         reader.onload = async function() {
             try {
                 const base64Content = reader.result.split(',')[1];
-                statusMsg.innerHTML = `<span style="color:orange">Checking if file exists...</span>`;
+                statusMsg.innerHTML = `<span style="color:orange">Checking existing files...</span>`;
 
                 let existingSha = null;
                 try {
@@ -274,13 +286,36 @@ document.getElementById('fileInput').addEventListener('change', async function()
                     existingSha = existingFile.sha;
                 } catch (e) { }
 
-                statusMsg.innerHTML = `<span style="color:orange">Uploading...</span>`;
-                const requestBody = { message: `Upload ${file.name} via Admin Panel`, content: base64Content };
+                statusMsg.innerHTML = `<span style="color:orange">Uploading to GitHub...</span>`;
+                const requestBody = { message: `Upload ${file.name}`, content: base64Content };
                 if (existingSha) requestBody.sha = existingSha;
 
-                await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(file.name)}`, 'PUT', requestBody);
+                const uploadRes = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(file.name)}`, 'PUT', requestBody);
+                const newFileData = await uploadRes.json();
+                
                 statusMsg.innerHTML = `<span style="color:#00ff00">Upload Complete!</span>`; 
-                loadImages();
+                
+                // INSTANT UI UPDATE: Add new row to top of table
+                const tableBody = document.getElementById('imageTableBody');
+                
+                // Remove the "Loading" placeholder if it's the only row
+                if(tableBody.innerText.includes('Fetching')) tableBody.innerHTML = '';
+                
+                // If overwritten, remove old row first
+                if (existingSha) {
+                    const oldRow = document.getElementById(`row-${existingSha}`);
+                    if (oldRow) oldRow.remove();
+                }
+
+                const newRow = document.createElement('tr');
+                newRow.id = `row-${newFileData.content.sha}`;
+                newRow.innerHTML = buildRowHTML(newFileData.content);
+                tableBody.prepend(newRow); // Add to top
+                
+                analyzeImage(newFileData.content.download_url, newRow.querySelector('.dim-cell'));
+                
+                setTimeout(() => statusMsg.innerHTML = '', 3000);
+
             } catch (err) { statusMsg.innerHTML = `<span style="color:red">Upload Failed: ${err.message}</span>`; }
         };
     } catch (error) { statusMsg.innerHTML = `<span style="color:red">${error.message}</span>`; }
