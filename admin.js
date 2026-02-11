@@ -3,6 +3,7 @@ const REPO_OWNER = "ecwgrpmkt-stack";
 const REPO_NAME = "360_gallery";
 const IMAGE_FOLDER = "images";
 
+// AUTH CHECK
 if (sessionStorage.getItem('ecw_auth') !== 'true') window.location.href = 'index.html';
 
 function logout() { sessionStorage.removeItem('ecw_auth'); window.location.href = 'index.html'; }
@@ -70,9 +71,13 @@ async function githubRequest(endpoint, method = 'GET', body = null) {
 async function deleteFile(filename, sha) {
     if (!confirm(`Permanently DELETE "${filename}"?`)) return;
     const btn = event.target; btn.innerText = "⏳"; btn.disabled = true;
-    const res = await githubRequest(`contents/${IMAGE_FOLDER}/${filename}`, 'DELETE', { message: `Delete ${filename}`, sha: sha });
+    const res = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(filename)}`, 'DELETE', { message: `Delete ${filename}`, sha: sha });
     if (res && res.ok) loadImages();
-    else { alert("Delete failed."); btn.innerText = "🗑️"; btn.disabled = false; }
+    else { 
+        const err = await res.json();
+        alert("Delete failed: " + err.message); 
+        btn.innerText = "🗑️"; btn.disabled = false; 
+    }
 }
 
 async function toggleVisibility(filename, sha) {
@@ -93,17 +98,18 @@ async function performRename(oldName, newName, sha, loadingMsg) {
     statusMsg.innerHTML = `<span style="color:orange">${loadingMsg} (Please wait)</span>`;
 
     try {
-        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/${oldName}`;
+        const rawUrl = `https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/main/${IMAGE_FOLDER}/${encodeURIComponent(oldName)}`;
         const fetchRes = await fetch(rawUrl);
         const blob = await fetchRes.blob();
         
         const reader = new FileReader(); reader.readAsDataURL(blob);
         reader.onloadend = async function() {
             const base64data = reader.result.split(',')[1];
-            const putRes = await githubRequest(`contents/${IMAGE_FOLDER}/${newName}`, 'PUT', { message: `Rename ${oldName} to ${newName}`, content: base64data });
+            
+            const putRes = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(newName)}`, 'PUT', { message: `Rename ${oldName} to ${newName}`, content: base64data });
             if (!putRes.ok) throw new Error("Failed to create new file.");
             
-            const delRes = await githubRequest(`contents/${IMAGE_FOLDER}/${oldName}`, 'DELETE', { message: `Cleanup old file`, sha: sha });
+            const delRes = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(oldName)}`, 'DELETE', { message: `Cleanup old file`, sha: sha });
             if (delRes.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Success!</span>`; loadImages(); }
             else { throw new Error("Created new file but failed to delete old one."); }
         };
@@ -112,6 +118,7 @@ async function performRename(oldName, newName, sha, loadingMsg) {
     }
 }
 
+// --- 4. IMPROVED UPLOAD LOGIC ---
 const fileInput = document.getElementById('fileInput');
 fileInput.addEventListener('change', handleUpload);
 
@@ -120,18 +127,53 @@ async function handleUpload() {
     const token = document.getElementById('githubToken').value.trim();
     const statusMsg = document.getElementById('uploadStatus');
 
-    if (!file || !token) { statusMsg.innerHTML = "Error: Missing File or Token"; return; }
+    if (!file || !token) { statusMsg.innerHTML = `<span style="color:red">Error: Missing File or Token</span>`; return; }
     
     localStorage.setItem('ecw_gh_token', token);
-    statusMsg.innerText = "Reading file...";
+    statusMsg.innerHTML = `<span style="color:orange">Reading file...</span>`;
 
-    const reader = new FileReader(); reader.readAsDataURL(file);
+    const reader = new FileReader(); 
+    reader.readAsDataURL(file);
+    
     reader.onload = async function() {
         const base64Content = reader.result.split(',')[1];
-        statusMsg.innerText = "Uploading...";
-        const res = await githubRequest(`contents/${IMAGE_FOLDER}/${file.name}`, 'PUT', { message: `Upload ${file.name}`, content: base64Content });
-        if (res && res.ok) { statusMsg.innerHTML = `<span style="color:#00ff00">Upload Complete!</span>`; loadImages(); }
-        else { statusMsg.innerText = "Upload Failed."; }
+        statusMsg.innerHTML = `<span style="color:orange">Checking repository...</span>`;
+
+        try {
+            // 1. Check if the file already exists (so we can overwrite it)
+            let existingSha = null;
+            const checkRes = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(file.name)}`, 'GET');
+            if (checkRes && checkRes.ok) {
+                const existingFile = await checkRes.json();
+                existingSha = existingFile.sha;
+            }
+
+            // 2. Upload the file
+            statusMsg.innerHTML = `<span style="color:orange">Uploading to GitHub...</span>`;
+            const requestBody = { 
+                message: `Upload ${file.name} via Admin Panel`, 
+                content: base64Content 
+            };
+            
+            // If the file exists, GitHub strictly requires the old SHA to allow overwrite
+            if (existingSha) requestBody.sha = existingSha;
+
+            const res = await githubRequest(`contents/${IMAGE_FOLDER}/${encodeURIComponent(file.name)}`, 'PUT', requestBody);
+            
+            if (res && res.ok) { 
+                statusMsg.innerHTML = `<span style="color:#00ff00">Success! Image Uploaded.</span>`; 
+                loadImages(); 
+            } else { 
+                // Capture the exact error from GitHub to display to the user
+                const errData = await res.json();
+                throw new Error(errData.message || "Unknown GitHub API Error");
+            }
+        } catch (error) {
+            statusMsg.innerHTML = `<span style="color:red">Upload Failed: ${error.message}</span>`;
+            console.error("Upload Error Details:", error);
+        }
     };
 }
+
+// Initialize
 loadImages();
