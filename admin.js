@@ -1,85 +1,99 @@
-// --- ADMIN CONFIG ---
-const ADMIN_PASSWORD = "ecw123"; 
-let currentFile = null;
+const REPO_URL = "ecwgrpmkt-stack/360_gallery";
+const ADMIN_PASS = "ecw123";
+let currentToken = localStorage.getItem('gh_token') || "";
 
-// On Load
-document.addEventListener('DOMContentLoaded', () => {
-    const token = localStorage.getItem('gh_token');
-    if (token) document.getElementById('gh-token').value = token;
-    fetchGalleryImages();
-});
+// --- SECURITY: LOCK/UNLOCK LOGIC ---
+function toggleLock(type) {
+    const field = type === 'token' ? document.getElementById('gh-token') : document.getElementById('gh-repo');
+    const icon = document.getElementById(`lock-icon-${type}`);
 
-// --- TOKEN LOCK/UNLOCK LOGIC ---
-const tokenField = document.getElementById('gh-token');
-const lockBtn = document.getElementById('lock-toggle');
-const lockIcon = document.getElementById('lock-icon');
-
-lockBtn.addEventListener('click', () => {
-    if (tokenField.readOnly) {
-        // Attempt Unlock
-        const pass = prompt("Enter Admin Credential to Unlock:");
-        if (pass === ADMIN_PASSWORD) {
-            tokenField.readOnly = false;
-            tokenField.type = "text";
-            lockIcon.className = "fas fa-lock-open";
-            tokenField.focus();
-        } else {
-            alert("Unauthorized Access!");
-        }
+    if (field.readOnly) {
+        const pass = prompt("Admin Credential Required:");
+        if (pass === ADMIN_PASS) {
+            field.readOnly = false;
+            field.type = "text";
+            field.value = type === 'token' ? currentToken : REPO_URL;
+            icon.className = "fas fa-lock-open";
+        } else { alert("Access Denied"); }
     } else {
-        // Lock and Save
-        tokenField.readOnly = true;
-        tokenField.type = "password";
-        lockIcon.className = "fas fa-lock";
-        localStorage.setItem('gh_token', tokenField.value);
+        if (type === 'token') {
+            currentToken = field.value;
+            localStorage.setItem('gh_token', currentToken);
+        }
+        field.readOnly = true;
+        field.type = "password";
+        field.value = "********************"; // Re-mask
+        icon.className = "fas fa-lock";
+        loadAssets(); // Refresh list with new token
     }
-});
+}
 
-// --- RENAME MODAL LOGIC ---
-function openRename(fileName) {
-    currentFile = fileName;
-    const dotIndex = fileName.lastIndexOf('.');
-    const namePart = fileName.substring(0, dotIndex);
-    const extPart = fileName.substring(dotIndex);
+// --- CORE: LOAD ASSETS ---
+async function loadAssets() {
+    if (!currentToken) return;
+    const tbody = document.getElementById('asset-table');
+    
+    try {
+        const res = await fetch(`https://api.github.com/repos/${REPO_URL}/contents/images`, {
+            headers: { 'Authorization': `token ${currentToken}` }
+        });
+        const files = await res.json();
+        tbody.innerHTML = "";
 
-    document.getElementById('new-name-field').value = namePart;
-    document.getElementById('ext-lock-label').innerText = extPart;
+        files.forEach(file => {
+            const isHidden = file.name.startsWith('hidden_');
+            const displayName = isHidden ? file.name.replace('hidden_', '') : file.name;
+            
+            tbody.innerHTML += `
+                <tr>
+                    <td><img src="${file.download_url}" class="thumb"></td>
+                    <td>${displayName}</td>
+                    <td><span class="status-badge ${isHidden ? 'status-hidden' : 'status-live'}">${isHidden ? 'HIDDEN' : 'LIVE'}</span></td>
+                    <td style="display:flex; gap:8px">
+                        <button class="btn btn-secondary" onclick="toggleVisibility('${file.name}', ${isHidden}, '${file.sha}')">
+                            <i class="fas ${isHidden ? 'fa-eye' : 'fa-eye-slash'}"></i>
+                        </button>
+                        <button class="btn btn-secondary" onclick="openRename('${file.name}', '${file.sha}')"><i class="fas fa-edit"></i></button>
+                        <button class="btn btn-secondary" style="color:#ff4444" onclick="deleteAsset('${file.name}', '${file.sha}')"><i class="fas fa-trash"></i></button>
+                    </td>
+                </tr>
+            `;
+        });
+    } catch (e) { console.error("Load failed", e); }
+}
+
+// --- ACTIONS: HIDE/SHOW ---
+async function toggleVisibility(oldName, currentlyHidden, sha) {
+    const newName = currentlyHidden ? oldName.replace('hidden_', '') : 'hidden_' + oldName;
+    await renameFileOnGithub(oldName, newName, sha);
+}
+
+// --- ACTIONS: RENAME ---
+let renameSha = "";
+let oldFileName = "";
+function openRename(name, sha) {
+    oldFileName = name;
+    renameSha = sha;
+    const dot = name.lastIndexOf('.');
+    document.getElementById('rename-input').value = name.substring(0, dot);
+    document.getElementById('ext-label').innerText = name.substring(dot);
     document.getElementById('rename-modal').style.display = 'flex';
 }
 
-function closeRenameModal() {
-    document.getElementById('rename-modal').style.display = 'none';
+document.getElementById('confirm-rename').onclick = async () => {
+    const newBase = document.getElementById('rename-input').value;
+    const ext = document.getElementById('ext-label').innerText;
+    await renameFileOnGithub(oldFileName, newBase + ext, renameSha);
+    closeModal();
+};
+
+async function renameFileOnGithub(oldName, newName, sha) {
+    alert(`Logic: Committing Move ${oldName} -> ${newName} to GitHub...`);
+    // 1. Get file content, 2. Create new file, 3. Delete old file
+    loadAssets(); 
 }
 
-document.getElementById('confirm-rename').addEventListener('click', () => {
-    const newName = document.getElementById('new-name-field').value.trim();
-    const extension = document.getElementById('ext-lock-label').innerText;
-    
-    if (newName) {
-        const finalFullName = newName + extension;
-        console.log(`Debug: Renaming ${currentFile} to ${finalFullName}`);
-        // Run GitHub API Rename Function here
-        closeRenameModal();
-    }
-});
+function closeModal() { document.getElementById('rename-modal').style.display = 'none'; }
 
-// --- MOCK API DATA (Replace with your actual Fetch logic) ---
-function fetchGalleryImages() {
-    const list = document.getElementById('image-list');
-    // Mock Data for Debugging
-    const images = [
-        { name: 'lobby_view.jpg', url: 'https://via.placeholder.com/150' },
-        { name: 'main_hall.png', url: 'https://via.placeholder.com/150' }
-    ];
-
-    list.innerHTML = images.map(img => `
-        <tr>
-            <td><img src="${img.url}" class="img-thumb"></td>
-            <td>${img.name}</td>
-            <td class="action-btns">
-                <button class="btn-rename" onclick="openRename('${img.name}')"><i class="fas fa-edit"></i></button>
-                <button class="btn-delete"><i class="fas fa-trash"></i></button>
-            </td>
-        </tr>
-    `).join('');
-}
+// Initial load
+if (currentToken) loadAssets();
