@@ -306,10 +306,17 @@ input[type="text"], input[type="password"] {
 .rename-ext { color: #888; font-weight: bold; margin-left: 5px; font-size: 1rem; }
 
 /* =========================================================
-   MOBILE RESPONSIVE PATCH - 360 INTERIOR GALLERY
+   MOBILE RESPONSIVE PATCH - 360 INTERIOR GALLERY (V2)
    ========================================================= */
 @media (max-width: 900px) {
-    /* 1. Mathematically Center the Controls (Next/Prev/FS) */
+    /* Hide the Hand Icon & Drag Text */
+    #idleIndicator { display: none !important; opacity: 0 !important; visibility: hidden !important; }
+
+    /* Make the Back button smaller */
+    .back-btn { font-size: 0.65rem !important; letter-spacing: 1px !important; }
+    .back-btn .arrow { font-size: 1.1rem !important; }
+
+    /* Mathematically Center the Controls (Next/Prev/FS) */
     #controls {
         position: absolute !important; 
         bottom: 110px !important; 
@@ -322,35 +329,22 @@ input[type="text"], input[type="password"] {
         gap: 15px !important;
     }
 
-    /* 2. Transform vertical sidebar into horizontal swipeable bottom bar */
+    /* Transform vertical sidebar into horizontal swipeable bottom bar */
     #sidebar { 
-        position: absolute !important; 
-        bottom: 0 !important; 
-        left: 0 !important; 
-        width: 100% !important; 
-        height: auto !important; 
-        flex-direction: row !important; 
-        z-index: 150 !important;
-        border-right: none !important;
-        border-top: 1px solid rgba(255,255,255,0.1) !important;
-        background: rgba(0,0,0,0.85) !important;
-        backdrop-filter: blur(10px) !important;
+        position: absolute !important; bottom: 0 !important; left: 0 !important; 
+        width: 100% !important; height: auto !important; 
+        flex-direction: row !important; z-index: 150 !important;
+        border-right: none !important; border-top: 1px solid rgba(255,255,255,0.1) !important;
+        background: rgba(0,0,0,0.85) !important; backdrop-filter: blur(10px) !important;
     }
     .sidebar-title { display: none !important; }
     
     /* Make thumbnails swipeable left/right */
     #thumbPanel { 
-        flex-direction: row !important; 
-        overflow-x: auto !important; 
-        overflow-y: hidden !important;
-        padding: 10px !important; 
-        gap: 10px !important;
+        flex-direction: row !important; overflow-x: auto !important; overflow-y: hidden !important;
+        padding: 10px !important; gap: 10px !important;
     }
-    #sidebar .thumb { 
-        width: 80px !important; 
-        height: 60px !important; 
-        flex-shrink: 0 !important; 
-    }
+    #sidebar .thumb { width: 80px !important; height: 60px !important; flex-shrink: 0 !important; }
 
     /* Hide drawing tools on mobile to clear screen space */
     #drawingToolbar { display: none !important; }
